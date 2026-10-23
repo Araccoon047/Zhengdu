@@ -1,10 +1,9 @@
 import { reactive, watch } from 'vue'
-import defaultReplyCards from './data/reply-cards.json'
 import { createDefaultChatToolSettings, normalizeChatToolSettings } from './chat-tools'
 
 const STORAGE_KEY = 'zhengdu_custom_settings_v1'
 
-export const DEFAULT_REPLY_CARDS = [...defaultReplyCards]
+export const DEFAULT_REPLY_CARDS = []
 
 export const CONTACT_AUTO_DEFAULTS = Object.freeze({
   callsAllowed: true,

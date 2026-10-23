@@ -769,6 +769,7 @@ function cardsForContact(contact) {
   const customCards = customCardsForContact(contact)
   const systemCards = systemCardsForContact()
   if (!systemCards.length) return customCards
+  if (!customCards.length) return systemCards
   const customChance = auto.customCardChanceRandom === true
     ? 50
     : Math.min(100, Math.max(0, Number(auto.customCardChance ?? 100)))
