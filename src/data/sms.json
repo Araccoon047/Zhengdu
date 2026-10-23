@@ -1,0 +1,31 @@
+{
+  "contacts": [
+    {
+      "id": "c1",
+      "name": "TA",
+      "note": "TA",
+      "avatar": "T",
+      "color": "#4a90e2",
+      "avatarImage": "",
+      "avatarFrame": "",
+      "chatBackground": "",
+      "chatBackgroundOpacity": 60,
+      "momentsCover": "",
+      "momentsCoverOpacity": 60,
+      "cards": [],
+      "stickers": [],
+      "replyFrequency": "normal",
+      "notificationSound": "default",
+      "backstory": "",
+      "messages": [
+        {
+          "id": "c1m1",
+          "from": "other",
+          "text": "我在这里。",
+          "time": "09:12",
+          "read": false
+        }
+      ]
+    }
+  ]
+}

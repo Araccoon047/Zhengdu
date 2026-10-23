@@ -1,0 +1,93 @@
+/* ==========================================================
+   扁平 UI（2026-10-23）
+   - 卡片 / 按钮不再有泛光（box-shadow、毛玻璃、发光描边）
+   - 背景一律纯色，不用渐变
+   - 浮层与面板完全不透明
+   放在 style.css 之后加载，作为最后一层收口。
+   ========================================================== */
+
+:root {
+  --button-shadow: none;
+}
+
+/* ---------- 页面底：纯色 ---------- */
+.site-stage,
+.site-stage.stage-site {
+  background: var(--theme-bg) !important;
+  background-image: none !important;
+}
+
+.echoes-app-shell {
+  background: var(--theme-surface) !important;
+  background-image: none !important;
+}
+
+/* ---------- 卡片 / 弹窗 / 面板 ---------- */
+[class*="card"],
+[class*="dialog"],
+[class*="modal"],
+[class*="sheet"],
+[class*="panel"],
+[class*="popup"],
+[class*="window"],
+[class*="overlay"] {
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ---------- 按钮 ---------- */
+button,
+[class*="btn"],
+[class*="button"] {
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background-image: none !important;
+}
+
+/* ---------- 蒙层 / 遮罩：保留半透明压暗，但不再毛玻璃 ---------- */
+[class*="layer"],
+[class*="mask"],
+[class*="scrim"],
+[class*="backdrop"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ---------- 顶栏 / 底栏 / 浮层：实色不透明 ---------- */
+.app-topbar,
+.global-dock,
+.home-dock,
+.home-pager,
+.dock-tilt,
+.settings-fixed-head,
+.message-toast,
+.music-float,
+.pomo-float,
+.qn-sticky,
+.inline-message-actions,
+.call-window {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+.app-topbar,
+.global-dock,
+.message-toast,
+.music-float,
+.pomo-float,
+.qn-sticky,
+.call-window {
+  background: var(--theme-surface) !important;
+}
+
+/* ---------- 输入框也不再发光 ---------- */
+input,
+textarea,
+select {
+  box-shadow: none !important;
+}
+
+/* 保留功能性图形：进度条、图片裁剪棋盘格、唱片纹路不受影响 */

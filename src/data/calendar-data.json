@@ -1,0 +1,161 @@
+{
+  "MOODS": [
+    {
+      "mood": "温柔",
+      "cat": "温暖",
+      "desc": "今天很温柔。"
+    },
+    {
+      "mood": "开心",
+      "cat": "温暖",
+      "desc": "今天心情很好。"
+    },
+    {
+      "mood": "愉快",
+      "cat": "温暖",
+      "desc": "今天过得很轻松。"
+    },
+    {
+      "mood": "满足",
+      "cat": "温暖",
+      "desc": "今天觉得很满足。"
+    },
+    {
+      "mood": "放松",
+      "cat": "温暖",
+      "desc": "今天慢慢放松着。"
+    },
+    {
+      "mood": "安心",
+      "cat": "温暖",
+      "desc": "今天很安心。"
+    },
+    {
+      "mood": "平静",
+      "cat": "平静",
+      "desc": "今天很平静。"
+    },
+    {
+      "mood": "安静",
+      "cat": "平静",
+      "desc": "今天想安静一点。"
+    },
+    {
+      "mood": "专注",
+      "cat": "平静",
+      "desc": "今天专注于眼前的事。"
+    },
+    {
+      "mood": "思考中",
+      "cat": "平静",
+      "desc": "今天一直在思考。"
+    },
+    {
+      "mood": "想念",
+      "cat": "想念",
+      "desc": "今天有些想你。"
+    },
+    {
+      "mood": "等待",
+      "cat": "想念",
+      "desc": "今天静静等着与你相遇。"
+    },
+    {
+      "mood": "期待",
+      "cat": "想念",
+      "desc": "今天期待着一点惊喜。"
+    },
+    {
+      "mood": "牵挂",
+      "cat": "想念",
+      "desc": "今天一直惦记着你。"
+    },
+    {
+      "mood": "疲惫",
+      "cat": "低落",
+      "desc": "今天有一点累。"
+    },
+    {
+      "mood": "孤单",
+      "cat": "低落",
+      "desc": "今天有些安静。"
+    },
+    {
+      "mood": "烦恼",
+      "cat": "低落",
+      "desc": "今天有些事情放不下。"
+    },
+    {
+      "mood": "精神很好",
+      "cat": "活跃",
+      "desc": "今天状态很好。"
+    },
+    {
+      "mood": "兴致高涨",
+      "cat": "活跃",
+      "desc": "今天充满热情。"
+    },
+    {
+      "mood": "充满动力",
+      "cat": "活跃",
+      "desc": "今天想做很多事情。"
+    }
+  ],
+  "ACTIVITIES": [
+    "看书",
+    "整理书籍",
+    "写东西",
+    "记录想法",
+    "工作中",
+    "整理资料",
+    "回复消息",
+    "听音乐",
+    "戴着耳机发呆",
+    "哼着歌",
+    "喝茶",
+    "泡茶中",
+    "喝点饮料",
+    "吃点心",
+    "吃饭中",
+    "休息中",
+    "小睡一会",
+    "发呆",
+    "想事情",
+    "思考中",
+    "放空自己",
+    "散步",
+    "看风景",
+    "晒太阳",
+    "吹吹风",
+    "听雨声",
+    "看夜空",
+    "看照片",
+    "放松中",
+    "创作中",
+    "整理照片",
+    "看视频",
+    "看电影",
+    "找点事情做",
+    "整理东西",
+    "安静待着",
+    "看着窗外",
+    "等待中",
+    "想着你",
+    "回忆过去",
+    "想靠近你",
+    "陪着你",
+    "等你来聊天",
+    "在线中",
+    "忙碌中",
+    "想给你一点惊喜",
+    "静静待着",
+    "在这里等你"
+  ],
+  "MOOD_ICONS": {
+    "温暖": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 21s-7.5-4.7-9.3-9A5.3 5.3 0 0112 6.4a5.3 5.3 0 019.3 5.6c-1.8 4.3-9.3 9-9.3 9z\"/></svg>",
+    "平静": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>",
+    "想念": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 3\"/></svg>",
+    "低落": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z\"/></svg>",
+    "活跃": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 20.5S4.5 15.2 4.5 9.9A4.9 4.9 0 0112 7.1a4.9 4.9 0 017.5 2.8c0 5.3-7.5 10.6-7.5 10.6z\"/></svg>"
+  }
+}

@@ -1,0 +1,18 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-*/
+
+# 缓存
+.cache/
+
+# 历史备份（本地保留可回滚，不纳入版本控制）
+src/.backup-*/
+src/data/.backup/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,88 @@
+/* =========================================================
+   芝芝桃主题（peach）
+   参考《芝芝桃主题.docx》
+   效果：粉桃色系，我方粉气泡、对方黄气泡，outline 描边 + 白色内描边。
+   四角贴纸用 CSS 爱心装饰替代外链贴纸图（外链不可靠）。
+   ========================================================= */
+
+/* ---------- 隐藏 echoes 默认的海豹角落装饰 ---------- */
+html[data-site-theme="peach"] .echoes-bubble-user::before,
+html[data-site-theme="peach"] .echoes-bubble-other::before {
+  display: none !important;
+  content: none !important;
+}
+
+/* ---------- 气泡：粉 / 黄 + outline 描边 + 白色内描边 ---------- */
+html[data-site-theme="peach"] .echoes-bubble-user,
+html[data-site-theme="peach"] .echoes-bubble-other {
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: 20px !important;
+  border: 1.5px solid #c26187 !important;
+  box-shadow: inset 0 0 0 2.5px #ffffff !important;
+  position: relative !important;
+  overflow: visible !important;
+  transform: translateY(21px) !important;
+}
+html[data-site-theme="peach"] .echoes-bubble-user {
+  background: #ffdde2 !important;
+  color: #6b5b5b !important;
+}
+html[data-site-theme="peach"] .echoes-bubble-other {
+  background: #fff9e5 !important;
+  color: #6b5b5b !important;
+}
+
+/* ---------- 四角爱心装饰（CSS 替代外链贴纸图） ---------- */
+html[data-site-theme="peach"] .echoes-bubble-user::after {
+  content: "♥";
+  display: block !important;
+  position: absolute !important;
+  top: -11px;
+  right: -7px;
+  font-size: 15px;
+  line-height: 1;
+  color: #e07a9c;
+  background: none !important;
+  width: auto !important;
+  height: auto !important;
+  transform: rotate(10deg);
+  pointer-events: none;
+  z-index: 3;
+}
+html[data-site-theme="peach"] .echoes-bubble-other::after {
+  content: "♥";
+  display: block !important;
+  position: absolute !important;
+  top: -11px;
+  left: -7px;
+  font-size: 15px;
+  line-height: 1;
+  color: #e0b14f;
+  background: none !important;
+  width: auto !important;
+  height: auto !important;
+  transform: rotate(-10deg);
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ---------- 输入框：白底粉桃描边 ---------- */
+html[data-site-theme="peach"] .echoes-chat-input,
+html[data-site-theme="peach"] .echoes-input-area input,
+html[data-site-theme="peach"] .echoes-input-area textarea {
+  background: #ffffff !important;
+  border: 1.5px solid #f7eaeb !important;
+  border-radius: 20px !important;
+  color: #6b5b5b !important;
+}
+
+/* ---------- 主色按钮：粉桃实底 ---------- */
+html[data-site-theme="peach"] button.primary,
+html[data-site-theme="peach"] .btn-primary,
+html[data-site-theme="peach"] .tool-primary {
+  background: #c26187 !important;
+  border-color: #c26187 !important;
+  color: #ffffff !important;
+}

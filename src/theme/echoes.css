@@ -1,0 +1,326 @@
+/* =========================================================
+   1. 全局背景与页面骨架 (恢复壁纸，只改文字色)
+========================================================= */
+.echoes-app-shell,
+.echoes-app,
+.echoes-page,
+.echoes-chat-page,
+.echoes-chat-date,
+.echoes-splash-screen,
+.echoes-loading-screen,
+.echoes-error-screen {
+    color: var(--theme-text) !important; 
+}
+
+/* 纯色：不再使用径向光斑 / 氛围层 */
+.echoes-app-overlay,
+.echoes-app-glow {
+    background: none !important;
+}
+
+/* =========================================================
+   2. 所有的顶栏、状态栏 (淡蓝色)
+========================================================= */
+.echoes-chat-header,
+.echoes-page-header,
+.echoes-modal-header {
+    background: var(--theme-pale) !important;
+    border-bottom: 2px solid var(--theme-border) !important;
+    color: var(--theme-primary) !important;
+    position: relative !important;
+}
+
+/* 颜文字副标题 */
+.echoes-chat-header::after {
+    content: "(･∞･ﾐэ )Э";
+    position: absolute;
+    bottom: 4px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: var(--theme-primary);
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.echoes-status-bar {
+    background: transparent !important;
+    color: var(--theme-primary) !important;
+}
+
+/* =========================================================
+   3. 各种卡片、面板、弹窗 (白底蓝边)
+========================================================= */
+.echoes-character-card, 
+.echoes-forum-post-card, 
+.echoes-diary-card,
+.echoes-reflection-card, 
+.echoes-profiling-card, 
+.echoes-shop-item-card,
+.echoes-wallet-balance-card, 
+.echoes-worldbook-entry-card, 
+.echoes-baixiang-card,
+.echoes-photo-card, 
+.echoes-file-card, 
+.echoes-location-card, 
+.echoes-gift-card,
+.echoes-modal-container, 
+.echoes-playlist-panel, 
+.echoes-photo-dialog, 
+.echoes-file-dialog,
+.echoes-toast-card,
+.echoes-error-card,
+.echoes-unblock-request-card {
+    background: #ffffff !important;
+    border: 2px solid var(--theme-border) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 4px 16px rgba(var(--theme-accent-rgb), 0.15) !important;
+    color: var(--theme-text) !important;
+}
+
+/* =========================================================
+   4. 所有的输入框、文本域 (蓝底白边)
+========================================================= */
+.echoes-chat-input,
+.echoes-input-area input,
+.echoes-input-area textarea,
+.echoes-input-api-endpoint, 
+.echoes-input-api-key, 
+.echoes-input-model-name,
+.echoes-textarea-chat-css, 
+.echoes-textarea-global-css, 
+.echoes-chat-edit-textarea,
+.echoes-video-call-input, 
+.echoes-image-upload,
+.echoes-quote,
+.echoes-ooc,
+.echoes-recalled-text {
+    background: var(--theme-soft) !important;
+    border: 1px solid var(--theme-border) !important;
+    border-radius: 16px !important;
+    color: var(--theme-text) !important;
+}
+
+.echoes-quote, .echoes-ooc {
+    border-left: 4px solid var(--theme-accent) !important;
+}
+
+/* =========================================================
+   5. 聊天输入区底栏 (白色底，带蓝色虚线)
+========================================================= */
+.echoes-input-area {
+    background: #ffffff !important;
+    border-top: 3px dashed var(--theme-border) !important;
+    position: relative !important;
+    overflow: visible !important;
+}
+
+/* 聊天输入栏：不加载任何远程装饰图 */
+
+/* =========================================================
+   6. 气泡与头像对齐 (我方淡蓝，对方纯白)
+========================================================= */
+.echoes-msg-user,
+.echoes-msg-other {
+    margin-top: 24px !important;
+    margin-bottom: 18px !important;
+    display: flex !important;
+    align-items: flex-start !important;
+}
+
+.echoes-bubble-user {
+    background: var(--theme-pale) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1 !important;
+    color: #333333 !important;
+    box-shadow: 0 3px 12px rgba(var(--theme-accent-rgb), 0.15) !important;
+    border: 1px solid var(--theme-border) !important;
+    border-radius: 24px !important;
+    position: relative !important;
+    overflow: visible !important;
+    align-self: flex-start !important;
+    margin-top: 0 !important;
+    transform: translateY(21px) !important;
+}
+
+.echoes-bubble-other {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1 !important;
+    color: #333333 !important;
+    box-shadow: 0 3px 12px rgba(var(--theme-accent-rgb), 0.15) !important;
+    border: 1px solid var(--theme-border-soft) !important;
+    border-radius: 24px !important;
+    position: relative !important;
+    overflow: visible !important;
+    align-self: flex-start !important;
+    margin-top: 0 !important;
+    transform: translateY(21px) !important;
+}
+
+/* 气泡角落装饰：使用本地打包图片，不依赖远程服务器 */
+.echoes-bubble-other::before {
+    content: "";
+    position: absolute;
+    top: -28px;
+    left: -20px;
+    width: clamp(52px, 15vw, 66px);
+    height: clamp(52px, 15vw, 66px);
+    background: url("../assets/theme/bubble-other.png") no-repeat center/contain;
+    transform: rotate(-5deg);
+    transform-origin: center;
+    pointer-events: none;
+    z-index: 2;
+    filter: drop-shadow(0 3px 5px rgba(var(--theme-accent-rgb), 0.1));
+}
+
+.echoes-bubble-user::before {
+    content: "";
+    position: absolute;
+    top: -22px;
+    right: -16px;
+    width: clamp(42px, 12vw, 52px);
+    height: clamp(42px, 12vw, 52px);
+    background: url("../assets/theme/bubble-user.png") no-repeat center/contain;
+    transform: rotate(4deg);
+    transform-origin: center;
+    pointer-events: none;
+    z-index: 2;
+    filter: drop-shadow(0 3px 5px rgba(var(--theme-accent-rgb), 0.1));
+}
+
+/* 默认头像装饰框：有自定义头像框时隐藏，避免两层边框冲突 */
+.echoes-avatar-user,
+.echoes-avatar-other {
+    position: relative !important;
+    overflow: visible !important;
+}
+
+.echoes-avatar-user::after,
+.echoes-avatar-other::after {
+    content: "";
+    position: absolute;
+    top: 20%;
+    left: 50%;
+    width: clamp(58px, 16vw, 70px);
+    height: clamp(58px, 16vw, 70px);
+    transform: translate(-50%, -50%);
+    background: url("../assets/theme/avatar-decoration.png") no-repeat center/contain;
+    pointer-events: none;
+    z-index: 4;
+    filter: drop-shadow(0 3px 6px rgba(var(--theme-primary-rgb), 0.12));
+}
+
+.echoes-avatar-user:has(> .avatar-frame)::after,
+.echoes-avatar-other:has(> .avatar-frame)::after {
+    display: none;
+}
+/* =========================================================
+   7. 转账卡片
+========================================================= */
+.echoes-transfer-card {
+    width: min(240px, calc(100vw - 118px)) !important;
+    min-height: 112px !important;
+    background: var(--theme-surface) !important;
+    border: 2px solid var(--theme-border) !important;
+    border-radius: 24px !important;
+    overflow: hidden !important;
+    position: relative !important;
+    padding: 12px 74px 12px 52px !important;
+}
+
+.echoes-transfer-card,
+.echoes-transfer-card * {
+    color: var(--theme-text) !important;
+    text-shadow: none !important;
+}
+
+/* 用户提供的海豹图，保存在本地主题资源目录 */
+.echoes-transfer-card::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 40px;
+    height: 40px;
+    background: url("../assets/theme/transfer-seal-resting.png") no-repeat center/contain;
+    filter: drop-shadow(0 3px 5px rgba(var(--theme-accent-rgb), 0.16));
+    pointer-events: none;
+    z-index: 2;
+}
+
+.echoes-transfer-card::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    left: auto;
+    bottom: 12px;
+    width: 90px;
+    height: 90px;
+    background: url("../assets/theme/transfer-seal-full.png") no-repeat center/contain;
+    transform: none;
+    pointer-events: none;
+    z-index: 3;
+}
+/* =========================================================
+   8. 旁白与时间戳
+========================================================= */
+.echoes-narrator {
+    background: var(--theme-soft) !important;
+    color: var(--theme-text) !important;
+    border: 2px dotted var(--theme-border) !important;
+    border-radius: 20px !important;
+    padding: 8px 16px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    font-weight: 600 !important;
+    position: relative !important;
+    overflow: hidden !important;
+    text-align: center !important;
+}
+.echoes-narrator::before,
+.echoes-narrator::after {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    display: inline !important;
+    transform: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    pointer-events: none !important;
+}
+.echoes-narrator::before {
+    content: "✦";
+    color: var(--theme-accent) !important;
+}
+.echoes-narrator::after {
+    content: "✧";
+    color: var(--theme-muted) !important;
+}
+.echoes-timestamp {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    color: var(--theme-accent) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    margin: 18px auto 4px auto !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+    letter-spacing: 0 !important;
+    white-space: nowrap !important;
+}
+.echoes-timestamp::before { content: none !important; }
+.echoes-timestamp::after { content: none !important; }

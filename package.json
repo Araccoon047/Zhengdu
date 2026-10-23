@@ -1,0 +1,19 @@
+{
+  "name": "zhengdu",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "争渡 · 小手机风格的网页版（后续套壳为安卓 APP）",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5178",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4178"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7"
+  }
+}
