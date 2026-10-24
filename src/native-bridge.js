@@ -86,3 +86,33 @@ export function notifyNativeReady() {
   if (!isNativeApp()) return
   call('onWebReady')
 }
+const pendingNativeJson = new Map()
+let nativeJsonSequence = 0
+
+if (typeof window !== 'undefined' && !window.__zhengduNativeJsonResponse) {
+  window.__zhengduNativeJsonResponse = (requestId, status, body) => {
+    const task = pendingNativeJson.get(requestId)
+    if (!task) return
+    pendingNativeJson.delete(requestId)
+    clearTimeout(task.timer)
+    task.resolve({ status: Number(status), body: String(body ?? '') })
+  }
+}
+
+export function requestNativeJson(url, headers, body) {
+  if (!isNativeApp()) return Promise.reject(new Error('原生网络桥接不可用'))
+  const requestId = `ai-${Date.now()}-${++nativeJsonSequence}`
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingNativeJson.delete(requestId)
+      reject(new Error('AI 请求超时，请检查网络或接口地址'))
+    }, 50000)
+    pendingNativeJson.set(requestId, { resolve, reject, timer })
+    const sent = call('requestJson', requestId, String(url), JSON.stringify(headers || {}), String(body || ''))
+    if (sent === undefined) {
+      clearTimeout(timer)
+      pendingNativeJson.delete(requestId)
+      reject(new Error('无法发起原生 AI 请求'))
+    }
+  })
+}

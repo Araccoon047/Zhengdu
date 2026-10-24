@@ -19,17 +19,23 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends Activity {
-    private static final String HOME_URL = "https://araccoon047.github.io/Zhengdu/";
+    private static final String HOME_URL = "https://appassets.androidplatform.net/assets/www/index.html";
     private static final int FILE_CHOOSER_REQUEST = 4101;
     private static final int APP_PERMISSION_REQUEST = 4102;
     private static final int WEB_PERMISSION_REQUEST = 4103;
@@ -75,6 +81,8 @@ public class MainActivity extends Activity {
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setLoadsImagesAutomatically(true);
         settings.setBuiltInZoomControls(false);
@@ -93,6 +101,11 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new NativeBridge(this, webView), "ZhengduNative");
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                WebResourceResponse local = serveBundledAsset(request.getUrl());
+                return local != null ? local : super.shouldInterceptRequest(view, request);
+            }
             @Override
             public void onPageCommitVisible(WebView view, String url) {
                 super.onPageCommitVisible(view, url);
@@ -145,6 +158,43 @@ public class MainActivity extends Activity {
         });
     }
 
+    private WebResourceResponse serveBundledAsset(Uri uri) {
+        if (uri == null || !"appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())) return null;
+        String path = uri.getPath();
+        if (path == null || !path.startsWith("/assets/www/")) {
+            return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", new HashMap<>(), new ByteArrayInputStream(new byte[0]));
+        }
+        String assetPath = path.substring("/assets/".length());
+        String mime = assetMimeType(assetPath);
+        try {
+            InputStream stream = getAssets().open(assetPath);
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Access-Control-Allow-Origin", "*");
+            headers.put("Cache-Control", "no-cache");
+            return new WebResourceResponse(mime, "UTF-8", 200, "OK", headers, stream);
+        } catch (Exception error) {
+            return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", new HashMap<>(), new ByteArrayInputStream(new byte[0]));
+        }
+    }
+
+    private String assetMimeType(String path) {
+        String lower = path.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".html")) return "text/html";
+        if (lower.endsWith(".js") || lower.endsWith(".mjs")) return "application/javascript";
+        if (lower.endsWith(".css")) return "text/css";
+        if (lower.endsWith(".json")) return "application/json";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".svg")) return "image/svg+xml";
+        if (lower.endsWith(".ttf")) return "font/ttf";
+        if (lower.endsWith(".woff")) return "font/woff";
+        if (lower.endsWith(".woff2")) return "font/woff2";
+        if (lower.endsWith(".wav")) return "audio/wav";
+        if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".ogg")) return "audio/ogg";
+        return "application/octet-stream";
+    }
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
@@ -169,6 +219,9 @@ public class MainActivity extends Activity {
         if (uri == null) return false;
         String scheme = uri.getScheme();
         String host = uri.getHost();
+        if ("https".equalsIgnoreCase(scheme) && "appassets.androidplatform.net".equalsIgnoreCase(host)) {
+            return false;
+        }
         if ("https".equalsIgnoreCase(scheme) && "araccoon047.github.io".equalsIgnoreCase(host)) {
             return false;
         }

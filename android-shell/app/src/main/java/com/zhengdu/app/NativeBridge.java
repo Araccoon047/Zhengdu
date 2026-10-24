@@ -24,10 +24,16 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+
+import org.json.JSONObject;
 
 public class NativeBridge {
     private static final String MESSAGE_CHANNEL_ID = "zhengdu_messages";
@@ -79,6 +85,59 @@ public class NativeBridge {
         }
     }
 
+    @JavascriptInterface
+    public void requestJson(String requestId, String url, String headersJson, String body) {
+        new Thread(() -> {
+            int status = -1;
+            String responseText = "";
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setConnectTimeout(30000);
+                connection.setReadTimeout(45000);
+                connection.setRequestMethod("POST");
+                connection.setDoInput(true);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Accept", "application/json");
+                JSONObject headers = new JSONObject(headersJson == null ? "{}" : headersJson);
+                java.util.Iterator<String> keys = headers.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    connection.setRequestProperty(key, headers.optString(key));
+                }
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(String.valueOf(body).getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                }
+                status = connection.getResponseCode();
+                InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                if (input != null) {
+                    try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = stream.read(buffer)) != -1) {
+                            output.write(buffer, 0, read);
+                            if (output.size() > 2 * 1024 * 1024) break;
+                        }
+                        responseText = output.toString(StandardCharsets.UTF_8.name());
+                    }
+                }
+            } catch (Exception error) {
+                try {
+                    responseText = new JSONObject().put("error", new JSONObject().put("message", error.getMessage())).toString();
+                } catch (Exception ignored) {
+                    responseText = "{\"error\":{\"message\":\"AI 网络请求失败\"}}";
+                }
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+            final int responseStatus = status;
+            final String responseBody = responseText;
+            String callback = "window.__zhengduNativeJsonResponse&&window.__zhengduNativeJsonResponse("
+                    + JSONObject.quote(requestId) + "," + responseStatus + "," + JSONObject.quote(responseBody) + ")";
+            webView.post(() -> webView.evaluateJavascript(callback, null));
+        }, "ZhengduAIRequest").start();
+    }
     @JavascriptInterface
     public void showNotification(String title, String body) {
         showMessageNotification(title, body);

@@ -23,6 +23,11 @@ if (Test-Path -LiteralPath $stageRoot) {
 }
 New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app') -Destination (Join-Path $stageRoot 'app') -Recurse -Force
+$webDist = Join-Path $repoRoot 'dist-web'
+if (-not (Test-Path -LiteralPath (Join-Path $webDist 'index.html'))) { throw 'dist-web is missing. Run npm run build first.' }
+$webAssets = Join-Path $stageRoot 'app\src\main\assets\www'
+New-Item -ItemType Directory -Path $webAssets -Force | Out-Null
+Copy-Item -Path (Join-Path $webDist '*') -Destination $webAssets -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $androidRoot 'platform-35\android-35\android.jar') -Destination (Join-Path $stageRoot 'android.jar') -Force
 Copy-Item -LiteralPath $buildToolsDir.FullName -Destination (Join-Path $stageRoot 'tools') -Recurse -Force
 $aapt2 = Join-Path (Join-Path $stageRoot 'tools') 'aapt2.exe'
@@ -53,7 +58,7 @@ Write-Host 'Compiling Android resources...'
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 compile failed' }
 
 Write-Host 'Linking Android resources...'
-& $aapt2 link -o $baseApk -I $androidJar --manifest $manifest --java $genDir --auto-add-overlay $resZip
+& $aapt2 link -o $baseApk -I $androidJar -A (Join-Path $stageApp 'src\main\assets') --manifest $manifest --java $genDir --auto-add-overlay $resZip
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 link failed' }
 
 Write-Host 'Compiling Java sources...'

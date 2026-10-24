@@ -1,3 +1,5 @@
+import { isNativeApp, requestNativeJson } from './native-bridge'
+
 export const AI_PROVIDERS = [
   {
     id: 'openai',
@@ -106,49 +108,67 @@ export async function requestAiInterpretation(config, payload = {}) {
   const content = String(payload.content || '').trim()
   if (!content) throw new Error('没有可解读的内容')
 
+  const headers = {
+    'Content-Type': 'application/json',
+  }
+  if (config.authMode === 'api-key') headers['api-key'] = config.apiKey
+  else headers.Authorization = `Bearer ${config.apiKey}`
+
+  const requestBody = {
+    model: config.model,
+    messages: [
+      { role: 'system', content: buildSystemPrompt(config) },
+      {
+        role: 'user',
+        content: [
+          `角色名称：${characterName}`,
+          `角色背景设定：${backstory}`,
+          `解读类型：${contentType}`,
+          `需要解读的原文：${content}`,
+          '请只返回一段以角色口吻写出的解读文字。',
+        ].join('\n\n'),
+      },
+    ],
+    temperature: Number(config.temperature) || 0.7,
+    max_tokens: Number(config.maxTokens) || 500,
+  }
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 45000)
   try {
-    const headers = {
-      'Content-Type': 'application/json',
+    let raw = ''
+    let responseOk = false
+    let responseStatus = 0
+    let responseStatusText = ''
+
+    if (isNativeApp()) {
+      const nativeResult = await requestNativeJson(endpoint, headers, JSON.stringify(requestBody))
+      raw = nativeResult.body
+      responseStatus = nativeResult.status
+      responseOk = responseStatus >= 200 && responseStatus < 300
+      responseStatusText = responseOk ? 'OK' : '请求失败'
+    } else {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify(requestBody),
+      })
+      raw = await response.text()
+      responseOk = response.ok
+      responseStatus = response.status
+      responseStatusText = response.statusText
     }
-    if (config.authMode === 'api-key') headers['api-key'] = config.apiKey
-    else headers.Authorization = `Bearer ${config.apiKey}`
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: buildSystemPrompt(config) },
-          {
-            role: 'user',
-            content: [
-              `角色名称：${characterName}`,
-              `角色背景设定：${backstory}`,
-              `解读类型：${contentType}`,
-              `需要解读的原文：${content}`,
-              '请只返回一段以角色口吻写出的解读文字。',
-            ].join('\n\n'),
-          },
-        ],
-        temperature: Number(config.temperature) || 0.7,
-        max_tokens: Number(config.maxTokens) || 500,
-      }),
-    })
-
-    const raw = await response.text()
     let data = null
     try {
       data = raw ? JSON.parse(raw) : null
     } catch {
       data = null
     }
-    if (!response.ok) {
-      const message = data?.error?.message || data?.message || raw.slice(0, 220) || response.statusText
-      throw new Error(`AI 接口请求失败（${response.status}）：${message}`)
+    if (!responseOk) {
+      const message = data?.error?.message || data?.message || raw.slice(0, 220) || responseStatusText
+      throw new Error(`AI 接口请求失败（${responseStatus}）：${message}`)
     }
     const text =
       data?.choices?.[0]?.message?.content ||
@@ -161,8 +181,7 @@ export async function requestAiInterpretation(config, payload = {}) {
     return text.trim()
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('AI 请求超时，请检查网络或接口地址')
-    throw error
-  } finally {
+    throw error  } finally {
     clearTimeout(timeout)
   }
 }
