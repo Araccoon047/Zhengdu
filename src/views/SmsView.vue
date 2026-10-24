@@ -9,6 +9,7 @@ import StickerPickerDialog from '../components/StickerPickerDialog.vue'
 import ActionGlyph from '../components/ActionGlyph.vue'
 import LineGlyph from '../components/LineGlyph.vue'
 import { CHAT_TOOL_CATALOG, isChatToolEnabled } from '../chat-tools'
+import { isAiScopeEnabled, requestAiInterpretation } from '../ai'
 import {
   DEFAULT_NUDGE_TEXTS,
   allNudgeSymbols,
@@ -784,12 +785,35 @@ async function translateMessage() {
     infoLoading.value = false
   }
 }
-function interpretMessage() {
+async function interpretMessage() {
   const message = messageTarget.value
   const text = messageText(message)
   inlineActionMode.value = 'result'
-  infoLoading.value = false
   infoTitle.value = '消息解读'
+  infoText.value = ''
+
+  if (isAiScopeEnabled(settings.ai, 'chat')) {
+    const roleContact = activeIsGroup.value
+      ? chatState.contacts.find((item) => (active.value?.memberIds || []).includes(item.id))
+      : active.value
+    infoTitle.value = 'AI 消息解读'
+    infoLoading.value = true
+    try {
+      infoText.value = await requestAiInterpretation(settings.ai, {
+        characterName: roleContact ? contactDisplayName(roleContact) : 'TA',
+        backstory: roleContact?.backstory || '',
+        contentType: '聊天消息',
+        content: text,
+      })
+    } catch (error) {
+      infoText.value = error.message || 'AI 解读失败，请检查设置 → AI接入'
+    } finally {
+      infoLoading.value = false
+    }
+    return
+  }
+
+  infoLoading.value = false
   if (/想你|喜欢|爱|抱|亲/.test(text)) {
     infoText.value = '这句话带有明显的亲近和在意，像是在表达想念或撒娇。'
   } else if (/[？?]/.test(text)) {

@@ -17,6 +17,7 @@ import { startMomentsEngine, stopMomentsEngine } from './moments'
 import { startMailboxEngine, stopMailboxEngine } from './mailbox'
 import { startAvatarEngine, stopAvatarEngine } from './avatar-lib'
 import { syncKeepAlive } from './keep-alive'
+import { notifyNativeReady } from './native-bridge'
 import HomeView from './views/HomeView.vue'
 import SmsView from './views/SmsView.vue'
 import AlbumView from './views/AlbumView.vue'
@@ -216,6 +217,7 @@ watch(
 )
 
 onMounted(() => {
+  notifyNativeReady()
   startChatEngine()
   startMomentsEngine()
   startMailboxEngine()

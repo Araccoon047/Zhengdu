@@ -351,6 +351,17 @@ function initials(contact) {
       </template>
     </div>
 
+    <details class="echoes-character-card profile-about">
+      <summary>
+        <span>关于</span>
+        <i>›</i>
+      </summary>
+      <div class="profile-about-body">
+        <p><strong>作者</strong><span>南岭</span></p>
+        <p><strong>当前版本</strong><span>Zhengdu1.0</span></p>
+      </div>
+    </details>
+
     <teleport to="body">
       <transition name="dialog-fade">
         <div v-if="managerOpen" class="modal-layer" @click.self="managerOpen = false">
@@ -448,6 +459,14 @@ function initials(contact) {
   </section>
 </template>
 <style scoped>
+.profile-about { padding: 0; overflow: hidden; }
+.profile-about summary { list-style: none; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; color: var(--theme-text-strong); font-size: 12px; font-weight: 800; cursor: pointer; }
+.profile-about summary::-webkit-details-marker { display: none; }
+.profile-about summary i { color: var(--theme-muted); font-size: 18px; font-style: normal; transition: transform .18s ease; }
+.profile-about[open] summary i { transform: rotate(90deg); }
+.profile-about-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--theme-border-soft); }
+.profile-about-body p { margin: 0; padding-top: 10px; display: flex; align-items: center; justify-content: space-between; color: var(--theme-muted); font-size: 10.5px; }
+.profile-about-body strong { color: var(--theme-text); font-size: 10.5px; }
 .profile {
   max-width: 560px;
   margin: 0 auto;

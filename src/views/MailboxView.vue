@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { chatState, contactDisplayName, primaryContact } from '../chat'
+import { chatState, contactById, contactDisplayName, primaryContact } from '../chat'
+import { settings } from '../settings'
+import { isAiScopeEnabled, requestAiInterpretation } from '../ai'
 import { addUserLetter, deleteLetter, lettersForTab, mailboxState, toggleLetterFavorite } from '../mailbox'
 
 const tabs = [
@@ -17,6 +19,9 @@ const replyTarget = ref(null)
 const draft = ref('')
 const status = ref('')
 const openedLetter = ref(null)
+const letterAiResult = ref('')
+const letterAiLoading = ref(false)
+const letterAiError = ref('')
 let statusTimer = null
 const contacts = computed(() => chatState.contacts)
 const letters = computed(() => lettersForTab(activeTab.value))
@@ -52,7 +57,34 @@ function closeComposer() {
   closeComposer()
   showStatus(isReply ? '回信已寄出' : '信件已寄出')
 }
-function reply(letter) {
+function openLetter(letter) {
+  openedLetter.value = letter
+  letterAiResult.value = ''
+  letterAiError.value = ''
+}
+async function interpretLetter(letter = openedLetter.value) {
+  if (!letter) return
+  letterAiResult.value = ''
+  letterAiError.value = ''
+  if (!isAiScopeEnabled(settings.ai, 'mail')) {
+    letterAiError.value = '请先在设置 → AI接入中启用 AI，并开启“信箱信件”用途。'
+    return
+  }
+  const contact = contactById(letter.contactId)
+  letterAiLoading.value = true
+  try {
+    letterAiResult.value = await requestAiInterpretation(settings.ai, {
+      characterName: contact ? contactDisplayName(contact) : letter.contactName || 'TA',
+      backstory: contact?.backstory || '',
+      contentType: '信件',
+      content: letter.body,
+    })
+  } catch (error) {
+    letterAiError.value = error.message || 'AI 信件解读失败'
+  } finally {
+    letterAiLoading.value = false
+  }
+}function reply(letter) {
   openComposer('reply', letter)
 }
 function favorite(letter) {
@@ -113,7 +145,7 @@ function excerpt(text) {
         <button class="primary" type="button" :disabled="!draft.trim() || !composeContactId" @click="sendLetter">寄出</button>
       </div>
     </section>    <div class="mail-list">
-      <article v-for="letter in letters" :key="letter.id" class="letter" @click="openedLetter = letter">
+      <article v-for="letter in letters" :key="letter.id" class="letter" @click="openLetter(letter)">
         <header class="letter-head">
           <span class="letter-avatar" :style="{ background: letter.contactColor || 'var(--theme-primary)' }">
             <img v-if="letter.contactAvatarImage" :src="letter.contactAvatarImage" alt="" />
@@ -143,7 +175,11 @@ function excerpt(text) {
             </div>
           </header>
           <p class="letter-modal-body">{{ openedLetter.body }}</p>
+          <div v-if="letterAiLoading" class="letter-ai-result">正在使用 AI 解读…</div>
+          <div v-else-if="letterAiResult" class="letter-ai-result"><strong>AI 解读</strong><span>{{ letterAiResult }}</span></div>
+          <div v-if="letterAiError" class="letter-ai-error">{{ letterAiError }}</div>
           <footer class="letter-modal-actions">
+            <button type="button" :disabled="letterAiLoading" @click="interpretLetter(openedLetter)">AI解读</button>
             <button type="button" @click="reply(openedLetter)">回信</button>
             <button type="button" @click="favorite(openedLetter)">{{ openedLetter.favorite ? '取消收藏' : '收藏' }}</button>
             <button class="danger" type="button" @click="remove(openedLetter)">删除</button>
@@ -202,4 +238,4 @@ function excerpt(text) {
 .letter-modal-body{margin:16px 0;color:var(--theme-text);font-size:13px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
 .letter-modal-actions{display:flex;gap:18px;padding-top:12px;border-top:1px solid var(--theme-border-soft)}
 .letter-modal-actions button{padding:0;border:0;background:transparent;box-shadow:none;color:var(--theme-primary);font-size:10.5px;cursor:pointer}
-.letter-modal-actions button.danger{color:var(--theme-accent-warm)}</style>
+.letter-modal-actions button.danger{color:var(--theme-accent-warm)}.letter-ai-result{display:flex;flex-direction:column;gap:5px;margin:0 0 14px;padding:10px 12px;border-radius:12px;background:var(--theme-soft);color:var(--theme-text);font-size:11.5px;line-height:1.7;white-space:pre-wrap}.letter-ai-result strong{color:var(--theme-primary);font-size:10.5px}.letter-ai-error{margin:0 0 12px;color:var(--theme-accent-warm);font-size:10.5px;line-height:1.6}</style>

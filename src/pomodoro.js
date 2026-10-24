@@ -9,6 +9,7 @@
  */
 import { reactive } from 'vue'
 import { sendIncomingText } from './chat'
+import { isNativeApp, showNativeNotification } from './native-bridge'
 
 const STORE_KEY = 'zhengdu_pomodoro_v1'
 const RUNTIME_KEY = 'zhengdu_pomodoro_runtime_v1'
@@ -190,8 +191,12 @@ function playChime() {
 
 function sendNotify(title, body) {
   try {
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
     if (document.visibilityState === 'visible') return
+    if (isNativeApp()) {
+      showNativeNotification(title, body)
+      return
+    }
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
     new Notification(title, { body })
   } catch {
     /* 忽略 */

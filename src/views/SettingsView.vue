@@ -6,6 +6,7 @@ import {
   chatState,
   clearAllMessages,
   contactDisplayName,
+  primaryContact,
   notificationPermission,
   notificationSupported,
   requestNotificationPermission,
@@ -18,6 +19,8 @@ import { CHAT_TOOL_CATALOG, createDefaultChatToolSettings } from '../chat-tools'
 import ProbabilityField from '../components/ProbabilityField.vue'
 import { BUILTIN_AVATAR_FRAME_SKINS, BUILTIN_BUBBLE_SKINS } from '../theme/skins'
 import { APP_ICON_THEMES, appIconSrc } from '../app-icons'
+import { canCustomizeLauncherIcon, createNativeLauncherShortcut, isNativeApp, nativeAppVersion, requestIgnoreBatteryOptimizations, requestNativePermissions } from '../native-bridge'
+import { AI_PROVIDERS, isAiConfigured, requestAiInterpretation } from '../ai'
 import {
   EXPORT_CATEGORIES,
   availableImportCategories,
@@ -54,6 +57,14 @@ const FONT_OPTIONS = [
   { id: 'pixel', name: '缝合怪像素字体', description: '12px 像素风，复古游戏感' },
 ]
 const activeSection = ref('')
+const isNativeShell = isNativeApp()
+const nativeShellVersion = nativeAppVersion()
+const nativePermissionRequested = ref(false)
+const nativeShortcutLabel = ref('争渡')
+const nativeShortcutPreview = ref('')
+const aiTesting = ref(false)
+const aiTestResult = ref('')
+const aiTestError = ref('')
 const settingsSections = [
   { id: 'anniversary', label: '纪念日组件', hint: '标题、日期、头像和背景' },
   { id: 'time', label: '时差组件', hint: '自定义时差卡片比例' },
@@ -63,6 +74,7 @@ const settingsSections = [
   { id: 'momentsBackground', label: '朋友圈背景图', hint: '我的与联系人分别设置' },
   { id: 'autoChat', label: 'TA的回复', hint: '回复、主动消息与概率' },
   { id: 'chatTools', label: '聊天工具', hint: '工具开关与默认参数' },
+  { id: 'ai', label: 'AI接入', hint: '配置智能体 API 与解读用途' },
   { id: 'featureHub', label: '功能大全', hint: '按分类查找聊天与全部功能' },
   { id: 'notifications', label: '通知', hint: '站内与浏览器通知' },
   { id: 'viewMode', label: '查看模式', hint: '切换手机与网站视图' },
@@ -327,6 +339,40 @@ function showChatToolNotice(message) {
   saveNotice.value = message
   clearTimeout(saveNoticeTimer)
   saveNoticeTimer = setTimeout(() => (saveNotice.value = ''), 2200)
+}
+function applyAiProviderPreset() {
+  const provider = AI_PROVIDERS.find((item) => item.id === settings.ai.provider)
+  if (!provider) return
+  if (provider.endpoint) settings.ai.endpoint = provider.endpoint
+  if (provider.model) settings.ai.model = provider.model
+}
+function saveAiSettings() {
+  saveSettingsNow()
+  saveNotice.value = 'AI 接入设置已保存'
+  clearTimeout(saveNoticeTimer)
+  saveNoticeTimer = setTimeout(() => (saveNotice.value = ''), 1800)
+}
+async function testAiConnection() {
+  aiTestResult.value = ''
+  aiTestError.value = ''
+  if (!isAiConfigured(settings.ai)) {
+    aiTestError.value = '请先启用 AI，并填写接口地址、模型和 API Key。'
+    return
+  }
+  aiTesting.value = true
+  try {
+    const contact = primaryContact()
+    aiTestResult.value = await requestAiInterpretation(settings.ai, {
+      characterName: contactDisplayName(contact),
+      backstory: contact?.backstory || '',
+      contentType: '连接测试',
+      content: '请用角色口吻简短地打一次招呼，证明解读接口已经连通。',
+    })
+  } catch (error) {
+    aiTestError.value = error.message || 'AI 连接测试失败'
+  } finally {
+    aiTesting.value = false
+  }
 }
 function saveChatToolSettings() {
   saveSettingsNow()
@@ -627,7 +673,9 @@ async function handleExport() {
   exportNotice.value = ''
   try {
     const result = await exportBackup(exportCategories.value)
-    exportNotice.value = `已导出 ${result.filename}（${formatBytes(result.bytes)}）`
+    exportNotice.value = result.savedNatively
+      ? '已保存到手机下载目录：' + result.filename + '（' + formatBytes(result.bytes) + '）'
+      : '已导出 ' + result.filename + '（' + formatBytes(result.bytes) + '）'
   } catch (e) {
     exportNotice.value = e.message || '导出失败'
   } finally {
@@ -647,7 +695,7 @@ async function onImportFile(event) {
   importError.value = ''
   importNotice.value = ''
   try {
-    const backup = parseBackupText(await file.text())
+    const backup = parseBackupText(await readImportFile(file))
     importBackupData.value = backup
     importFileName.value = file.name
     importAvailable.value = availableImportCategories(backup)
@@ -708,7 +756,63 @@ async function clearEverything() {
 }
 
 async function enableBrowserNotifications() {
+  if (isNativeShell) nativePermissionRequested.value = true
   permission.value = await requestNotificationPermission()
+}
+
+function requestNativeAppPermissions() {
+  if (!requestNativePermissions()) return
+  nativePermissionRequested.value = true
+}
+
+function openBatteryOptimizationSettings() {
+  requestIgnoreBatteryOptimizations()
+}
+
+async function pickNativeShortcutIcon(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  imageError.value = ''
+  try {
+    const result = await cropImage(file, {
+      title: '裁剪桌面图标',
+      aspectRatio: 1,
+      lockAspect: true,
+      shape: 'rect',
+      maxSide: 512,
+      quality: 0.92,
+    })
+    if (result) nativeShortcutPreview.value = result
+  } catch (e) {
+    imageError.value = e.message || '图片处理失败'
+  }
+}
+
+function createDesktopShortcut() {
+  if (!canCustomizeLauncherIcon()) {
+    imageError.value = '自定义桌面图标仅在套壳 App 中可用'
+    return
+  }
+  if (!nativeShortcutPreview.value) {
+    imageError.value = '请先选择一张图标图片'
+    return
+  }
+  const created = createNativeLauncherShortcut(nativeShortcutPreview.value, nativeShortcutLabel.value.trim() || '争渡')
+  if (!created) {
+    imageError.value = '当前手机桌面不支持固定快捷方式，或桌面空间已满'
+    return
+  }
+  imageError.value = ''
+}
+function readImportFile(file) {
+  if (typeof file.text === 'function') return file.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('备份文件读取失败'))
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.readAsText(file)
+  })
 }
 
 onMounted(() => {
@@ -954,11 +1058,7 @@ onMounted(() => {
           <span>最多字卡数</span>
           <input v-model.number="settings.taTodayCardMax" class="input" type="number" min="1" max="3" />
         </label>
-        <label class="field">
-          <span>系统字卡概率（%）</span>
-          <input v-model.number="settings.taTodayCardSystemChance" class="input" type="number" min="0" max="100" />
-        </label>
-        <div class="auto-chat-hint">每天从字卡库随机抽取 {{ settings.taTodayCardMin }}～{{ settings.taTodayCardMax }} 张作为留言；系统字卡概率控制「系统预设字卡 vs 自定义字卡」的抽取比例。</div>
+        <div class="auto-chat-hint">每天必定出现留言，并在 0 点自动刷新。系统预设字卡和自定义字卡会合并后等概率完全随机抽取，不再使用额外概率。</div>
         <div class="save-settings-row">
           <button class="save-settings-button" type="button" @click="saveCardLayoutSettings">
             保存并立即生效
@@ -1597,6 +1697,67 @@ onMounted(() => {
         </section>
       </div>
     </details>
+    <details v-show="activeSection === 'ai'" :open="activeSection === 'ai'" class="echoes-character-card setting-group settings-subpage">
+      <summary>
+        <span class="label">AI接入</span>
+        <span class="arrow">›</span>
+      </summary>
+      <div class="group-body">
+        <label class="switch-row">
+          <span>启用 AI 解读</span>
+          <input v-model="settings.ai.enabled" type="checkbox" />
+        </label>
+        <div class="auto-chat-hint">AI 只根据「我的 → TA 的相关 → 身世」中的角色背景，以角色口吻解读消息、信件或朋友圈；不会修改原文、字卡抽取概率或自动回复概率。</div>
+
+        <label class="field">
+          <span>智能体类型</span>
+          <select v-model="settings.ai.provider" class="input" @change="applyAiProviderPreset">
+            <option v-for="provider in AI_PROVIDERS" :key="provider.id" :value="provider.id">{{ provider.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>接口地址</span>
+          <input v-model="settings.ai.endpoint" class="input" type="url" placeholder="https://example.com/v1/chat/completions" />
+        </label>
+        <label class="field">
+          <span>模型名称</span>
+          <input v-model="settings.ai.model" class="input" type="text" placeholder="模型名称" />
+        </label>
+        <label class="field">
+          <span>API Key</span>
+          <input v-model="settings.ai.apiKey" class="input" type="password" autocomplete="off" placeholder="只保存在本机浏览器" />
+        </label>
+        <label class="field">
+          <span>认证方式</span>
+          <select v-model="settings.ai.authMode" class="input">
+            <option value="bearer">Authorization: Bearer</option>
+            <option value="api-key">api-key 请求头</option>
+          </select>
+        </label>
+        <div class="interval-grid">
+          <label><span>温度</span><input v-model.number="settings.ai.temperature" type="number" min="0" max="2" step="0.1" /></label>
+          <label><span>最大输出 Token</span><input v-model.number="settings.ai.maxTokens" type="number" min="50" max="4000" step="50" /></label>
+        </div>
+
+        <div class="auto-chat-title">使用位置</div>
+        <label class="switch-row"><span>聊天消息「解读」</span><input v-model="settings.ai.useChatInterpret" type="checkbox" /></label>
+        <label class="switch-row"><span>信箱信件「AI解读」</span><input v-model="settings.ai.useMailInterpret" type="checkbox" /></label>
+        <label class="switch-row"><span>朋友圈帖子「AI解读」</span><input v-model="settings.ai.useMomentsInterpret" type="checkbox" /></label>
+
+        <label class="field">
+          <span>补充角色口吻要求</span>
+          <textarea v-model="settings.ai.rolePrompt" class="input" rows="3" maxlength="1000" placeholder="可选，例如：语气温柔克制，句子简短"></textarea>
+        </label>
+        <div class="auto-chat-hint">接口需兼容 OpenAI Chat Completions 的 `messages` 请求格式。API Key 会随本地设置保存，请勿在公共设备上填写。</div>
+        <div class="chat-tool-action-row">
+          <button class="small-button" type="button" :disabled="aiTesting" @click="testAiConnection">{{ aiTesting ? '正在连接…' : '测试连接' }}</button>
+          <button class="small-button primary" type="button" @click="saveAiSettings">保存 AI 设置</button>
+        </div>
+        <div v-if="aiTestResult" class="status-line success">{{ aiTestResult }}</div>
+        <div v-if="aiTestError" class="error-line">{{ aiTestError }}</div>
+        <span v-if="saveNotice" class="save-settings-notice">{{ saveNotice }}</span>
+      </div>
+    </details>
     <details v-show="activeSection === 'notifications'" :open="activeSection === 'notifications'" class="echoes-character-card setting-group settings-subpage">
       <summary>
         <span class="label">通知</span>
@@ -1622,7 +1783,12 @@ onMounted(() => {
         <button class="action" type="button" :disabled="!notificationSupported() || permission === 'granted'" @click="enableBrowserNotifications">
           {{ permissionLabel }}
         </button>
-        <div class="auto-chat-hint" style="margin-top:12px">套壳成 APP 后，切到后台时网页定时器（主动消息、自动换头像等）可能被系统冻结。</div>
+        <template v-if="isNativeShell">
+          <button class="action" type="button" @click="requestNativeAppPermissions">申请系统权限（通知、照片与文件访问）</button>
+          <button class="action" type="button" @click="openBatteryOptimizationSettings">允许后台持续运行</button>
+          <div class="auto-chat-hint">套壳 App 版本：{{ nativeShellVersion || '争渡 Android' }}。文件上传使用系统文件选择器，备份文件会保存到手机“下载”目录。</div>
+        </template>
+        <div class="auto-chat-hint" style="margin-top:12px">开启后台保活后，套壳 App 会使用前台服务、静音播放和唤醒锁维持网页定时器运行；仍建议在系统设置中允许后台持续运行。</div>
         <label class="switch-row">
           <span>后台保活（静音音频）</span>
           <input v-model="settings.keepAliveEnabled" type="checkbox" />
@@ -1670,6 +1836,34 @@ onMounted(() => {
         <div class="image-actions">
           <button class="small-button" type="button" @click="createCustomIconTheme">新增自定义图标主题</button>
         </div>
+        <section v-if="isNativeShell" class="native-launcher-icon-card">
+          <div class="native-launcher-icon-head">
+            <div>
+              <strong>套壳 App 桌面图标</strong>
+              <span>仅 Android 套壳版本可用。上传图片后可创建一个带自定义图标和名称的桌面快捷方式。</span>
+            </div>
+          </div>
+          <div class="native-launcher-icon-body">
+            <span class="native-launcher-icon-preview">
+              <img v-if="nativeShortcutPreview" :src="nativeShortcutPreview" alt="自定义桌面图标预览" />
+              <LineGlyph v-else type="settings" />
+            </span>
+            <div class="native-launcher-icon-fields">
+              <label class="field">
+                <span>桌面图标名称</span>
+                <input v-model="nativeShortcutLabel" class="input" type="text" maxlength="20" placeholder="争渡" />
+              </label>
+              <div class="image-actions">
+                <label class="file-button">
+                  选择图标图片
+                  <input type="file" accept="image/*" @change="pickNativeShortcutIcon" />
+                </label>
+                <button class="small-button primary" type="button" :disabled="!nativeShortcutPreview" @click="createDesktopShortcut">创建自定义桌面图标</button>
+              </div>
+            </div>
+          </div>
+          <p class="auto-chat-hint">Android 标准桌面不支持由普通应用直接替换已安装 App 的全局图标，因此这里会创建一个使用你上传图片的固定桌面快捷方式。创建时可移除旧图标并保留新图标。</p>
+        </section>
         <p class="app-icon-intro">选择成套图标主题，也可以为指定 App 单独上传照片。自定义上传优先于成套主题。</p>
         <div class="app-icon-settings">
           <div v-for="item in appIconItems" :key="item.id" class="app-icon-setting-row">
@@ -1800,10 +1994,10 @@ onMounted(() => {
               <summary>导入数据 <span>›</span></summary>
               <div class="backup-item-body">
                 <p class="backup-hint">选择由本站导出的 JSON 备份文件。可一次恢复全部栏目，也可以只导入选中的栏目。</p>
-                <button class="small-button primary" type="button" :disabled="importBusy" @click="pickImportFile">
+                <label class="file-button primary" :class="{ disabled: importBusy }">
                   {{ importBusy ? '正在读取…' : '选择备份文件' }}
-                </button>
-                <input ref="importInput" class="hidden-file" type="file" accept=".json,application/json" @change="onImportFile" />
+                  <input ref="importInput" type="file" accept=".json,application/json,text/json" :disabled="importBusy" @change="onImportFile" />
+                </label>
 
                 <div v-if="importBackupData" class="import-preview">
                   <div class="import-file">{{ importFileName }}</div>
@@ -2748,6 +2942,80 @@ onMounted(() => {
   line-height: 1.1;
 }
 
+.native-launcher-icon-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 14px;
+  background: var(--theme-surface);
+}
+
+.native-launcher-icon-head strong {
+  display: block;
+  color: var(--theme-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.native-launcher-icon-head span {
+  display: block;
+  margin-top: 3px;
+  color: var(--theme-muted);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.native-launcher-icon-body {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.native-launcher-icon-preview {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 20px;
+  background: #ffffff;
+  color: var(--app-icon-color);
+}
+
+.native-launcher-icon-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.native-launcher-icon-preview svg {
+  width: 30px;
+  height: 30px;
+}
+
+.native-launcher-icon-fields {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-button.primary,
+.file-button:has(input:focus-visible) {
+  border-color: var(--theme-primary);
+  background: var(--theme-pale);
+  color: var(--theme-primary);
+}
+
+.file-button.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .app-icon-intro {
   margin: 0;
   color: var(--theme-muted);

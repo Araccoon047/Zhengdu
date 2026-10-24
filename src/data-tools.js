@@ -4,6 +4,7 @@ import { importMomentPosts, momentsState } from './moments'
 import { setLoadedStickers, stickerState, importStickerGroups, loadStickerLibrary } from './stickers'
 import { clearPhotos, listPhotos, putPhoto } from './album-store'
 import { clearStickers, listStickers, putSticker } from './sticker-store'
+import { isNativeApp, saveTextFileNatively } from './native-bridge'
 
 const BACKUP_FORMAT = 'zhengdu-backup'
 const BACKUP_VERSION = 1
@@ -387,15 +388,18 @@ export async function exportBackup(categories) {
   const blob = new Blob([text], { type: 'application/json' })
   const stamp = new Date().toISOString().slice(0, 10)
   const filename = `zhengdu-backup-${stamp}.json`
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return { filename, bytes: textBytes(text), backup }
+  const savedNatively = isNativeApp() && saveTextFileNatively(filename, 'application/json', text)
+  if (!savedNatively) {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  return { filename, bytes: textBytes(text), backup, savedNatively }
 }
 
 export function parseBackupText(text) {

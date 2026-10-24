@@ -16,3 +16,13 @@ src/data/.backup/
 .DS_Store
 Thumbs.db
 *.log
+
+# Android 构建缓存与产物
+android-shell/.gradle/
+android-shell/app/build/
+android-shell/build/
+*.keystore
+*.jks
+
+# 本地 Android SDK 与构建缓存
+.android-build/

@@ -1,4 +1,5 @@
 import { settings } from './settings'
+import { syncNativeKeepAlive } from './native-bridge'
 
 // 后台保活：循环播放一段运行时生成的静音 WAV，让套壳 WebView 认为有活跃媒体，
 // 避免切后台时 JS 定时器被冻结（主动消息、自动换头像、纪念日倒计时等都依赖定时器）。
@@ -35,6 +36,7 @@ function makeSilenceWav(seconds = 1) {
 }
 
 function startKeepAlive() {
+  syncNativeKeepAlive(true)
   if (started || typeof document === 'undefined') return
   started = true
   try {
@@ -63,6 +65,7 @@ function startKeepAlive() {
 }
 
 function stopKeepAlive() {
+  syncNativeKeepAlive(false)
   if (!started) return
   started = false
   try {

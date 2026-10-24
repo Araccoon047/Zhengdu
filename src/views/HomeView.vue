@@ -17,6 +17,8 @@ const activePage = ref(store.homePage || 0)
 const layoutEditing = ref(false)
 const draggingId = ref('')
 const dragOffset = ref({ x: 0, y: 0 })
+const swipeOffset = ref(0)
+const swiping = ref(false)
 let clockTimer = null
 let touchStart = null
 
@@ -46,11 +48,12 @@ const anniversaryCountColor = computed(() =>
 
 function parseLocalDate(value) {
   const [year, month, day] = String(value || '').split('-').map(Number)
-  return year && month && day ? new Date(year, month - 1, day) : new Date(2026, 9, 18)
+  return year && month && day ? new Date(year, month - 1, day) : null
 }
 
 const anniversary = computed(() => {
   const anniversaryDate = parseLocalDate(settings.anniversaryDate)
+  if (!anniversaryDate) return { days: 0, unit: '天' }
   const today = new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate())
   const dayMs = 86_400_000
   if (settings.anniversaryMode === 'until') {
@@ -117,6 +120,23 @@ const taTodayCardStyle = computed(() => ({
   ...(settings.taTodayCardColor ? { '--home-card-color': settings.taTodayCardColor } : {}),
   ...(settings.taTodayCardTextColor ? { '--home-card-text': settings.taTodayCardTextColor } : {}),
 }))
+let taTodayMidnightTimer = null
+let taTodayLoadedDate = taTodayDateKey()
+function refreshTaTodayCards() {
+  const date = taTodayDateKey()
+  if (date === taTodayLoadedDate) return
+  taTodayLoadedDate = date
+  taTodayCards.value = loadTaTodayCards()
+}
+function scheduleTaTodayMidnightRefresh() {
+  clearTimeout(taTodayMidnightTimer)
+  const current = new Date()
+  const next = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1, 0, 0, 1)
+  taTodayMidnightTimer = setTimeout(() => {
+    refreshTaTodayCards()
+    scheduleTaTodayMidnightRefresh()
+  }, Math.max(1000, next.getTime() - current.getTime()))
+}
 function parseCardRatio(value, fallback) {
   const match = String(value ?? '').trim().match(/^([1-4])\s*[xX×]\s*([1-8])$/)
   return match ? { w: Number(match[1]), h: Number(match[2]) } : fallback
@@ -236,9 +256,8 @@ const gridStyle = computed(() => ({
 }))
 
 const pageTrackStyle = computed(() => ({
-  transform: `translate3d(-${activePage.value * 50}%, 0, 0)`,
+  transform: `translate3d(calc(-${activePage.value * 50}% + ${swipeOffset.value}px), 0, 0)`,
 }))
-
 
 function setPage(index) {
   activePage.value = Math.max(0, Math.min(1, index))
@@ -246,6 +265,8 @@ function setPage(index) {
 }
 
 let dragState = null
+let dragEdgeTimer = null
+let dragEdgeTarget = 0
 
 function toggleLayoutEditing() {
   layoutEditing.value = !layoutEditing.value
@@ -282,6 +303,7 @@ function gridForPage(page) {
 }
 
 function switchDragPage(nextPage) {
+  clearDragEdgeTimer()
   if (!dragState || activePage.value === nextPage) return
   const viewport = document.querySelector('.home-viewport')
   const width = viewport?.getBoundingClientRect().width || window.innerWidth
@@ -292,26 +314,43 @@ function switchDragPage(nextPage) {
   dragState.grid = gridForPage(nextPage) || dragState.grid
 }
 
+function clearDragEdgeTimer() {
+  clearTimeout(dragEdgeTimer)
+  dragEdgeTimer = null
+  dragEdgeTarget = 0
+}
+function scheduleDragPage(nextPage) {
+  if (dragEdgeTarget === nextPage && dragEdgeTimer) return
+  clearDragEdgeTimer()
+  dragEdgeTarget = nextPage
+  dragEdgeTimer = setTimeout(() => {
+    if (dragState && dragEdgeTarget === nextPage && activePage.value !== nextPage) {
+      switchDragPage(nextPage)
+    }
+    dragEdgeTimer = null
+    dragEdgeTarget = 0
+  }, 650)
+}
 function handleDragMove(event) {
   if (!dragState || event.pointerId !== dragState.pointerId) return
   event.preventDefault()
   const viewport = document.querySelector('.home-viewport')
   const rect = viewport?.getBoundingClientRect()
+  const dx = event.clientX - dragState.startX
+  const dy = event.clientY - dragState.startY
   if (rect) {
-    const edge = Math.min(54, rect.width * 0.14)
-    if (event.clientX <= rect.left + edge && activePage.value > 0) {
-      switchDragPage(0)
-    } else if (event.clientX >= rect.right - edge && activePage.value < 1) {
-      switchDragPage(1)
+    const edge = Math.min(30, rect.width * 0.075)
+    let pageTarget = -1
+    if (activePage.value > 0 && event.clientX <= rect.left + edge && dx < -18 && Math.abs(dx) > Math.abs(dy) * 0.65) {
+      pageTarget = 0
+    } else if (activePage.value < 1 && event.clientX >= rect.right - edge && dx > 18 && Math.abs(dx) > Math.abs(dy) * 0.65) {
+      pageTarget = 1
     }
+    if (pageTarget >= 0) scheduleDragPage(pageTarget)
+    else clearDragEdgeTimer()
   }
-  dragOffset.value = {
-    x: event.clientX - dragState.startX,
-    y: event.clientY - dragState.startY,
-  }
-}
-
-function finishDrag(event) {
+  dragOffset.value = { x: dx, y: dy }
+}function finishDrag(event) {
   if (!dragState || event.pointerId !== dragState.pointerId) return
   const id = dragState.id
   const page = activePage.value
@@ -369,6 +408,7 @@ function finishDrag(event) {
   cleanupDrag()
 }
 function cleanupDrag() {
+  clearDragEdgeTimer()
   window.removeEventListener('pointermove', handleDragMove)
   window.removeEventListener('pointerup', finishDrag)
   window.removeEventListener('pointercancel', cleanupDrag)
@@ -379,26 +419,63 @@ function cleanupDrag() {
 }
 
 function handleTouchStart(event) {
-  if (layoutEditing.value || event.touches.length !== 1) return
+  if (event.touches.length !== 1) return
   const touch = event.touches[0]
-  touchStart = { x: touch.clientX, y: touch.clientY }
+  const target = event.target
+  const onHomeItem = Boolean(target?.closest?.('.home-item, button, input, textarea, select, a'))
+  touchStart = {
+    x: touch.clientX,
+    y: touch.clientY,
+    axis: '',
+    allowPage: !layoutEditing.value || !onHomeItem,
+  }
+  swipeOffset.value = 0
 }
-
+function handleTouchMove(event) {
+  if (!touchStart || !touchStart.allowPage || event.touches.length !== 1) return
+  const touch = event.touches[0]
+  const dx = touch.clientX - touchStart.x
+  const dy = touch.clientY - touchStart.y
+  if (!touchStart.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 7) {
+    touchStart.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y'
+  }
+  if (touchStart.axis !== 'x') return
+  const viewport = document.querySelector('.home-viewport')
+  const width = viewport?.getBoundingClientRect().width || window.innerWidth
+  let offset = dx
+  if ((activePage.value === 0 && dx > 0) || (activePage.value === 1 && dx < 0)) offset *= 0.28
+  offset = Math.max(-width, Math.min(width, offset))
+  swipeOffset.value = offset
+  swiping.value = true
+}
 function handleTouchEnd(event) {
-  if (layoutEditing.value) return
   if (!touchStart) return
   const touch = event.changedTouches[0]
   const dx = touch.clientX - touchStart.x
   const dy = touch.clientY - touchStart.y
+  const wasHorizontal = touchStart.axis === 'x'
   touchStart = null
-  if (Math.abs(dx) < 46 || Math.abs(dx) < Math.abs(dy) * 1.2) return
-  setPage(dx < 0 ? 1 : 0)
+  swiping.value = false
+  if (!wasHorizontal || Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.15) {
+    swipeOffset.value = 0
+    return
+  }
+  const nextPage = dx < 0 ? 1 : 0
+  if (nextPage !== activePage.value) {
+    setPage(nextPage)
+    requestAnimationFrame(() => {
+      swipeOffset.value = 0
+    })
+  } else {
+    swipeOffset.value = 0
+  }
 }
 
 function handleTouchCancel() {
   touchStart = null
+  swiping.value = false
+  swipeOffset.value = 0
 }
-
 function openApp(id) {
   if (layoutEditing.value) return
   if (id === 'sms') closeChat()
@@ -410,19 +487,25 @@ function updateNow() {
 }
 
 function handleVisibilityChange() {
-  if (!document.hidden) updateNow()
+  if (!document.hidden) {
+    updateNow()
+    refreshTaTodayCards()
+    scheduleTaTodayMidnightRefresh()
+  }
 }
 
 onMounted(() => {
   updateNow()
   clockTimer = setInterval(updateNow, 1000)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  scheduleTaTodayMidnightRefresh()
 })
 
 onUnmounted(() => {
   cleanupDrag()
   if (clockTimer) clearInterval(clockTimer)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  clearTimeout(taTodayMidnightTimer)
 })
 </script>
 
@@ -431,10 +514,11 @@ onUnmounted(() => {
     <div
       class="home-viewport"
       @touchstart.passive="handleTouchStart"
+      @touchmove.passive="handleTouchMove"
       @touchend.passive="handleTouchEnd"
       @touchcancel="handleTouchCancel"
     >
-      <div class="home-track" :style="pageTrackStyle">
+      <div class="home-track" :class="{ swiping }" :style="pageTrackStyle">
         <div class="home-page" data-home-page="0" :aria-hidden="activePage !== 0" :inert="activePage !== 0">
           <div class="bento-grid" :style="gridStyle">
       <div
@@ -574,11 +658,14 @@ onUnmounted(() => {
         class="echoes-character-card ta-today-card home-item"
         :class="{ dragging: draggingId === 'ta-today-card' }"
         :style="[itemStyle('ta-today-card'), taTodayCardStyle]"
+        
         @pointerdown="beginDrag($event, 'ta-today-card')"
       >
+        <div class="ta-today-inner">
         <span class="ta-today-kicker">今天 TA 想对你说</span>
         <div class="ta-today-list">
           <p v-for="(card, index) in taTodayCards" :key="index">{{ card }}</p>
+        </div>
         </div>
       </div>
 
@@ -625,12 +712,15 @@ onUnmounted(() => {
               class="echoes-character-card ta-today-card home-item"
               :class="{ dragging: draggingId === 'ta-today-card' }"
               :style="[itemStyle('ta-today-card'), taTodayCardStyle]"
+              
               @pointerdown="beginDrag($event, 'ta-today-card')"
             >
+        <div class="ta-today-inner">
               <span class="ta-today-kicker">今天 TA 想对你说</span>
               <div class="ta-today-list">
                 <p v-for="(card, index) in taTodayCards" :key="index">{{ card }}</p>
               </div>
+        </div>
             </div>
 
           </div>
@@ -667,8 +757,8 @@ onUnmounted(() => {
 <style scoped>
 .home{position:relative;width:100%;max-width:520px;height:100%;min-height:0;margin:0 auto;display:flex;flex-direction:column}
 .home-viewport{flex:1 1 auto;width:100%;min-height:0;overflow:hidden;touch-action:pan-y}
-.home-track{width:200%;height:100%;display:flex;align-items:stretch;transition:transform .38s cubic-bezier(.22,.72,.2,1);will-change:transform}
-.home-page{flex:0 0 50%;width:50%;height:100%;min-width:0}
+.home-track{width:200%;height:100%;display:flex;align-items:stretch;transition:transform .38s cubic-bezier(.22,.72,.2,1);will-change:transform}.home-track.swiping{transition:none!important}
+.home-page{flex:0 0 50%;width:50%;height:100%;min-width:0;padding:8px 9px;box-sizing:border-box}
 .home-pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:2px 0 3px}
 .pager-tabs{display:flex;align-items:center;justify-content:center;gap:2px}
 .layout-edit-toggle{height:22px;padding:0 9px;border:1px solid var(--theme-border-soft);border-radius:999px;background:var(--theme-soft);color:var(--theme-text);font-size:10px;font-weight:700;cursor:pointer;transition:background .2s ease,color .2s ease}
@@ -709,10 +799,26 @@ onUnmounted(() => {
 .time-card,.link-card{grid-column:span 2;grid-row:span 1;min-width:0;width:100%;overflow:hidden;border-radius:20px}
 .time-card{padding:8px 10px;display:flex;align-items:center}
 .link-card{padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
-.ta-today-card{grid-column:span 2;grid-row:span 2;min-width:0;width:100%;overflow:hidden;border-radius:20px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;container-type:size}
-.ta-today-kicker{font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--home-card-text,var(--theme-muted))}
-.ta-today-list{display:flex;flex-direction:column;gap:6px;flex:1;min-height:0;overflow:hidden}
-.ta-today-list p{margin:0;font-size:clamp(14px,min(4.5cqw,7cqh),17px);line-height:1.45;color:var(--home-card-text,var(--theme-text));overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ta-today-card{grid-column:span 2;grid-row:span 2;min-width:0;width:100%;overflow:hidden;border-radius:20px;padding:0;display:block;container-type:size;container-name:ta-today}
+.ta-today-inner{box-sizing:border-box;width:100%;height:100%;padding:clamp(5px,min(4cqw,7cqh),14px) clamp(6px,min(5cqw,7cqh),16px);display:flex;flex-direction:column;justify-content:center;gap:clamp(2px,min(2cqw,3.5cqh),7px);overflow:hidden}
+.ta-today-kicker{flex:none;min-width:0;max-width:100%;overflow:hidden;font-size:clamp(7px,min(5cqw,9cqh),13px);font-weight:700;line-height:1.2;letter-spacing:.08em;color:var(--home-card-text,var(--theme-muted));white-space:nowrap;text-overflow:ellipsis}
+.ta-today-list{display:flex;flex-direction:column;justify-content:center;flex:1 1 auto;min-height:0;overflow:hidden;gap:clamp(2px,min(2.8cqw,3cqh),7px)}
+.ta-today-list p{margin:0;flex:0 1 auto;min-height:0;max-width:100%;overflow:hidden;color:var(--home-card-text,var(--theme-text));font-size:clamp(8px,min(5.5cqw,10cqh),18px);line-height:1.35;overflow-wrap:anywhere;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+@container ta-today (max-height:120px){
+.ta-today-kicker{letter-spacing:.02em}
+.ta-today-list{gap:1px}
+.ta-today-list p{line-height:1.25;-webkit-line-clamp:1}
+}
+@container ta-today (min-height:210px){
+.ta-today-list p{-webkit-line-clamp:2}
+}
+@container ta-today (min-height:340px){
+.ta-today-list p{-webkit-line-clamp:3}
+}
+@container ta-today (max-width:130px){
+.ta-today-kicker{letter-spacing:0}
+.ta-today-list p{line-height:1.3}
+}
 .ts-top{width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
 .ts-cell{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;text-align:center}
 .ts-kicker{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--app-icon-color)}

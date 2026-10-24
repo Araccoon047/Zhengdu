@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">争渡</string>
+    <string name="keep_alive_channel_name">争渡后台运行</string>
+    <string name="keep_alive_channel_description">保持争渡网页在后台继续运行</string>
+    <string name="keep_alive_notification_title">争渡正在后台运行</string>
+    <string name="keep_alive_notification_text">主动消息、定时任务与聊天回复会继续运行</string>
+    <string name="notification_channel_name">争渡消息通知</string>
+    <string name="notification_channel_description">聊天、信箱、朋友圈与番茄钟提醒</string>
+</resources>

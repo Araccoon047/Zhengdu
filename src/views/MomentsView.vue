@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { settings } from '../settings'
+import { isAiScopeEnabled, requestAiInterpretation } from '../ai'
 import { contactById, contactDisplayName, primaryContact } from '../chat'
 import { cropImage } from '../image-crop'
 import LineGlyph from '../components/LineGlyph.vue'
@@ -26,6 +27,10 @@ const imageError = ref('')
 const activeTab = ref('posts')
 const activeCommentId = ref('')
 const commentDraft = ref('')
+const momentAiPostId = ref('')
+const momentAiResult = ref('')
+const momentAiError = ref('')
+const momentAiLoading = ref(false)
 const replyTargetComment = ref(null)
 const settingsOpen = ref(false)
 const clock = ref(0)
@@ -201,7 +206,38 @@ function removeDraftImage(index) {
   draftImages.value.splice(index, 1)
 }
 
-function toggleComment(post, comment = null) {
+async function interpretMoment(post) {
+  if (!post) return
+  if (momentAiPostId.value === post.id && (momentAiLoading.value || momentAiResult.value || momentAiError.value)) {
+    momentAiPostId.value = ''
+    momentAiResult.value = ''
+    momentAiError.value = ''
+    return
+  }
+  momentAiPostId.value = post.id
+  momentAiResult.value = ''
+  momentAiError.value = ''
+  if (!isAiScopeEnabled(settings.ai, 'moments')) {
+    momentAiError.value = '请先在设置 → AI接入中启用 AI，并开启“朋友圈帖子”用途。'
+    return
+  }
+  const roleContact = post.authorType === 'contact'
+    ? contactById(post.authorId)
+    : primaryContact()
+  momentAiLoading.value = true
+  try {
+    momentAiResult.value = await requestAiInterpretation(settings.ai, {
+      characterName: roleContact ? contactDisplayName(roleContact) : post.authorName || 'TA',
+      backstory: roleContact?.backstory || '',
+      contentType: '朋友圈帖子',
+      content: post.text || '',
+    })
+  } catch (error) {
+    momentAiError.value = error.message || 'AI 朋友圈解读失败'
+  } finally {
+    momentAiLoading.value = false
+  }
+}function toggleComment(post, comment = null) {
   if (activeCommentId.value === post.id && replyTargetComment.value?.id === comment?.id) {
     activeCommentId.value = ''
     replyTargetComment.value = null
@@ -418,6 +454,18 @@ onUnmounted(() => {
             <span>{{ post.favoriteByMe ? '已收藏' : '收藏' }}</span>
           </button>
           <button
+            class="action-item"
+            type="button"
+            aria-label="AI解读"
+            :disabled="momentAiLoading && momentAiPostId === post.id"
+            @click="interpretMoment(post)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+              <path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7z" />
+              <path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />
+            </svg>
+            <span>解读</span>
+          </button>          <button
             v-if="post.authorType === 'me'"
             class="action-item delete-action"
             type="button"
@@ -429,6 +477,13 @@ onUnmounted(() => {
             </svg>
             <span>删除</span>
           </button>
+        </div>
+
+        <div v-if="momentAiPostId === post.id && (momentAiLoading || momentAiResult || momentAiError)" class="moment-ai-result">
+          <strong>AI 解读</strong>
+          <span v-if="momentAiLoading">正在根据角色背景解读…</span>
+          <span v-else-if="momentAiError" class="error">{{ momentAiError }}</span>
+          <span v-else>{{ momentAiResult }}</span>
         </div>
 
         <form
@@ -929,7 +984,21 @@ onUnmounted(() => {
   color: var(--theme-accent-warm);
 }
 
-.comment-compose {
+.moment-ai-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 8px 14px 0 62px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--theme-soft);
+  color: var(--theme-text);
+  font-size: 10.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.moment-ai-result strong { color: var(--theme-primary); font-size: 10px; }
+.moment-ai-result .error { color: var(--theme-accent-warm); }.comment-compose {
   margin-top: 11px;
   display: flex;
   gap: 7px;

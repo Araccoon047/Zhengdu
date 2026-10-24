@@ -1,5 +1,6 @@
 import { reactive, watch } from 'vue'
 import { createDefaultChatToolSettings, normalizeChatToolSettings } from './chat-tools'
+import { createDefaultAiSettings, normalizeAiSettings } from './ai'
 
 const STORAGE_KEY = 'zhengdu_custom_settings_v1'
 
@@ -208,6 +209,7 @@ export const defaultSettings = {
   customIconThemes: [],
   contactAutoSettings: {},
   chatTools: createDefaultChatToolSettings(),
+  ai: createDefaultAiSettings(),
   themeTextColor: '',
   themeAppIconColor: '',
   themeDockColor: '',
@@ -218,7 +220,7 @@ export const defaultSettings = {
   anniversaryTitle: '我们在一起已经',
   anniversaryTextColor: '#69b1ff',
   anniversaryCountColor: '#4a90e2',
-  anniversaryDate: '2026-10-18',
+  anniversaryDate: '',
   anniversaryMode: 'since',
   // 纪念日关系类型（love 爱情向 / family 亲情向 / friend 友情向）与关系称呼（选填）
   anniversaryType: 'love',
@@ -236,7 +238,6 @@ export const defaultSettings = {
   taTodayCardTextColor: '',
   taTodayCardMin: 1,
   taTodayCardMax: 3,
-  taTodayCardSystemChance: 100,
   // 头像库：允许 TA 为用户换头像 + 换头像频率（天）/概率
   avatarAllowTaChange: true,
   avatarChangeMin: 5,
@@ -468,6 +469,7 @@ function normalize(saved = {}) {
         ? saved.contactAutoSettings
         : {},
     chatTools: normalizeChatToolSettings(saved.chatTools),
+    ai: normalizeAiSettings(saved.ai),
     appIconTheme: validIconThemeIds.includes(saved.appIconTheme)
       ? saved.appIconTheme
       : defaultSettings.appIconTheme,
@@ -492,11 +494,11 @@ function normalize(saved = {}) {
     )
       ? String(saved.anniversaryCountColor)
       : defaultSettings.anniversaryCountColor,
-    anniversaryDate:
-      /^\d{4}-\d{2}-\d{2}$/.test(String(saved.anniversaryDate ?? ''))
-        ? String(saved.anniversaryDate)
-        : defaultSettings.anniversaryDate,
-    anniversaryMode: saved.anniversaryMode === 'until' ? 'until' : 'since',
+    anniversaryDate: (() => {
+      const date = String(saved.anniversaryDate ?? '').trim()
+      if (!date || date === '2026-10-18') return ''
+      return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : ''
+    })(),    anniversaryMode: saved.anniversaryMode === 'until' ? 'until' : 'since',
     anniversaryType: ['love', 'family', 'friend'].includes(saved.anniversaryType)
       ? saved.anniversaryType
       : 'love',
@@ -516,7 +518,6 @@ function normalize(saved = {}) {
     taTodayCardTextColor: normalizeHexColor(saved.taTodayCardTextColor),
     taTodayCardMin: clampNumber(saved.taTodayCardMin, 1, 3, 1),
     taTodayCardMax: clampNumber(saved.taTodayCardMax, 1, 3, 3),
-    taTodayCardSystemChance: clampNumber(saved.taTodayCardSystemChance, 0, 100, 100),
     avatarAllowTaChange: saved.avatarAllowTaChange !== false,
     avatarChangeMin: clampNumber(saved.avatarChangeMin, 1, 30, 5),
     avatarChangeMax: clampNumber(saved.avatarChangeMax, 1, 30, 7),

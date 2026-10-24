@@ -7,6 +7,7 @@ import systemCardsData from './data/system-cards.json'
 import { loadStickerLibrary, randomStickerForContact, stickerState } from './stickers'
 import { listPhotos } from './album-store'
 import musicData from './data/music.json'
+import { isNativeApp, nativeNotificationPermission, requestNativePermissions, showNativeNotification } from './native-bridge'
 
 const STORAGE_KEY = 'zhengdu_sms_v1'
 const GROUPS_KEY = 'zhengdu_groups_v1'
@@ -358,7 +359,9 @@ function announce(conversation, text) {
   playNotificationSound(soundSource?.notificationSound || 'default')
   const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
   if (hidden) {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    if (isNativeApp()) {
+      showNativeNotification(conversationName(conversation), text)
+    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
         new Notification(conversationName(conversation), {
           body: text,
@@ -803,17 +806,11 @@ export function drawReplyCards(contact = primaryContact(), options = {}) {
 
 /**
  * 首页「今天 TA 想对你说」卡片：从字卡池（系统 + 自定义，均排除锁定分组）随机抽 min~max 张（去重）。
- * 系统字卡概率由 settings.taTodayCardSystemChance 控制，其余落到自定义字卡。
+ * 系统字卡与自定义字卡合并后完全随机抽取，不再使用额外概率。
  */
 export function drawTaTodayCards(min = 1, max = 3) {
   const contact = primaryContact()
-  const customCards = customCardsForContact(contact)
-  const systemCards = systemCardsForContact()
-  const systemChance = Math.min(100, Math.max(0, Number(settings.taTodayCardSystemChance ?? 100)))
-  let pool
-  if (!systemCards.length) pool = customCards
-  else if (!customCards.length) pool = systemCards
-  else pool = Math.random() * 100 < systemChance ? systemCards : customCards
+  const pool = [...customCardsForContact(contact), ...systemCardsForContact()]
   if (!pool.length) return []
   const count = randomCount(min, max, 1, 3)
   const shuffled = [...pool].sort(() => Math.random() - 0.5)
@@ -1721,14 +1718,19 @@ function onVisibilityChange() {
 }
 
 export function notificationSupported() {
-  return typeof Notification !== 'undefined'
+  return isNativeApp() || typeof Notification !== 'undefined'
 }
 
 export function notificationPermission() {
+  if (isNativeApp()) return nativeNotificationPermission()
   return notificationSupported() ? Notification.permission : 'unsupported'
 }
 
 export async function requestNotificationPermission() {
+  if (isNativeApp()) {
+    requestNativePermissions()
+    return nativeNotificationPermission()
+  }
   if (!notificationSupported()) return 'unsupported'
   try {
     return await Notification.requestPermission()
