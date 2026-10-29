@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { store } from '../store'
+import { avatarFrameStyle } from '../avatar-frame-style'
+import LineGlyph from './LineGlyph.vue'
 import {
   answerIncomingCall,
   chatState,
@@ -9,6 +11,10 @@ import {
   declineIncomingCall,
   hangupCall,
   toggleCallExpanded,
+  endGroupCall,
+  groupById,
+  joinGroupCall,
+  leaveGroupCall,
 } from '../chat'
 
 const windowRef = ref(null)
@@ -19,14 +25,22 @@ let dragOffsetY = 0
 
 const call = computed(() => chatState.call)
 const contact = computed(() => contactById(call.value?.contactId))
+const group = computed(() => groupById(call.value?.groupId))
+const isGroup = computed(() => Boolean(call.value?.groupId))
 const expanded = computed(() => Boolean(call.value?.expanded))
+const participantCount = computed(() => (
+  (call.value?.joinedMemberIds?.length || 0) + (call.value?.userJoined ? 1 : 0)
+))
 const callLabel = computed(() => (call.value?.kind === 'video' ? '视频通话' : '语音通话'))
+const callName = computed(() => (
+  isGroup.value ? group.value?.name || call.value?.groupName || '群通话' : contactDisplayName(contact.value)
+))
 const statusText = computed(() => {
-  if (!call.value) return ''
-  if (call.value.status === '通话中') return `通话中 · ${formatDuration(call.value.seconds)}`
-  return call.value.status
+  if (!call.value) return '';
+  const people = isGroup.value ? ` · ${participantCount.value} 人` : ''
+  if (call.value.status === '通话中') return `通话中${people} · ${formatDuration(call.value.seconds)}`
+  return `${call.value.status}${people}`
 })
-
 function callBounds() {
   const shellWidth = store.view === 'phone' ? Math.min(430, window.innerWidth) : window.innerWidth
   const left = store.view === 'phone' ? Math.max(0, (window.innerWidth - shellWidth) / 2) : 0
@@ -47,6 +61,21 @@ function formatDuration(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0))
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }
+
+function finishCurrentCall() {
+  if (isGroup.value) leaveGroupCall()
+  else hangupCall()
+}
+
+function endCurrentGroupCall() {
+  if (isGroup.value) endGroupCall()
+  else hangupCall()
+}
+
+function joinCurrentGroupCall() {
+  joinGroupCall()
+}
+
 
 function clampPosition() {
   const element = windowRef.value
@@ -124,43 +153,52 @@ onUnmounted(() => {
 <template>
   <transition name="call-window-pop">
     <div
-      v-if="call && contact"
+      v-if="call && (contact || group)"
       ref="windowRef"
       class="call-window"
-      :class="[expanded ? 'is-expanded' : 'is-collapsed', { dragging }]"
+      :class="[expanded ? 'is-expanded' : 'is-collapsed', { dragging, 'is-group': isGroup }]"
       :style="windowStyle"
     >
       <template v-if="expanded">
         <div class="call-window-head" @pointerdown="startDrag">
-          <span>{{ callLabel }}</span>
+          <span>{{ isGroup ? `群${callLabel}` : callLabel }}</span>
           <button type="button" aria-label="收起通话窗口" @click.stop="toggleCallExpanded">−</button>
         </div>
         <div class="call-window-body">
-          <span class="call-window-avatar" :style="{ background: contact.color }">
-            <img v-if="contact.avatarImage" :src="contact.avatarImage" alt="" />
-            <template v-else>{{ contact.avatar }}</template>
-            <img v-if="contact.avatarFrame" class="call-avatar-frame" :src="contact.avatarFrame" alt="" />
+          <span class="call-window-avatar echoes-avatar-other" :data-avatar-frame-skin-id="isGroup ? 'none' : contact.avatarFrameSkin || 'none'" :style="{ background: isGroup ? (group.color || 'var(--theme-primary)') : contact.color }">
+            <img v-if="isGroup ? group.avatarImage : contact.avatarImage" :src="isGroup ? group.avatarImage : contact.avatarImage" alt="" />
+            <template v-else>{{ isGroup ? (group.avatar || '群') : contact.avatar }}</template>
+            <img v-if="!isGroup && contact.avatarFrame" class="call-avatar-frame" :src="contact.avatarFrame" :style="avatarFrameStyle(contact)" alt="" />
           </span>
-          <strong class="call-window-name">{{ contactDisplayName(contact) }}</strong>
+          <strong class="call-window-name">{{ callName }}</strong>
           <span class="call-window-status">{{ statusText }}</span>
-          <div v-if="call.direction === 'incoming' && call.status !== '通话中'" class="call-window-actions">
+          <div v-if="isGroup && call.direction === 'incoming' && call.status !== '通话中'" class="call-window-actions">
             <button class="accept" type="button" @click="answerIncomingCall">接听</button>
             <button class="decline" type="button" @click="declineIncomingCall">拒绝</button>
           </div>
-          <button v-else class="hangup-call" type="button" @click="hangupCall">
-            结束通话
+          <div v-else-if="isGroup" class="call-window-actions group-call-actions">
+            <button v-if="!call.userJoined" class="accept" type="button" @click="joinCurrentGroupCall">加入通话</button>
+            <button v-else class="decline" type="button" @click="finishCurrentCall">退出通话</button>
+            <button class="end-group" type="button" @click="endCurrentGroupCall">结束</button>
+          </div>
+          <div v-else-if="call.direction === 'incoming' && call.status !== '通话中'" class="call-window-actions">
+            <button class="accept" type="button" @click="answerIncomingCall">接听</button>
+            <button class="decline" type="button" @click="declineIncomingCall">拒绝</button>
+          </div>
+          <button v-else class="hangup-call" type="button" aria-label="结束通话" title="结束通话" @click="hangupCall">
+            <LineGlyph type="phone" />
           </button>
         </div>
       </template>
 
       <div v-else class="collapsed-call" @pointerdown="startDrag">
-        <span class="collapsed-icon">{{ call.kind === 'video' ? '▣' : '☎' }}</span>
+        <span class="collapsed-icon">{{ isGroup ? '群' : (call.kind === 'video' ? '▣' : '☎') }}</span>
         <span class="collapsed-copy">
-          <strong>{{ contactDisplayName(contact) }}</strong>
+          <strong>{{ callName }}</strong>
           <small>{{ statusText }}</small>
         </span>
         <button type="button" aria-label="展开通话窗口" @click.stop="toggleCallExpanded">⌃</button>
-        <button class="collapsed-hangup" type="button" aria-label="结束通话" @click.stop="hangupCall">×</button>
+        <button v-if="!isGroup || call.userJoined" class="collapsed-hangup" type="button" aria-label="退出或结束通话" @click.stop="finishCurrentCall">×</button>
       </div>
     </div>
   </transition>
@@ -245,8 +283,8 @@ onUnmounted(() => {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 112%;
-  height: 112%;
+  width: 120%;
+  height: 120%;
   max-width: none;
   border-radius: 0;
   object-fit: contain;
@@ -294,6 +332,28 @@ onUnmounted(() => {
 .call-window-actions .decline,
 .hangup-call {
   background: var(--theme-accent-warm);
+}
+
+.call-window-body > .hangup-call {
+  flex: none;
+  align-self: center;
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  margin-top: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  line-height: 1;
+}
+.call-window-body > .hangup-call svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  transform: rotate(135deg);
 }
 
 .collapsed-call {
@@ -376,4 +436,17 @@ onUnmounted(() => {
   padding: 0 !important;
   line-height: 1 !important;
   box-shadow: none !important;
-}</style>
+}
+.call-window{width:224px;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:rgba(12,14,19,.66)!important;box-shadow:0 16px 40px rgba(0,0,0,.22)!important;backdrop-filter:blur(22px) saturate(1.35)!important;-webkit-backdrop-filter:blur(22px) saturate(1.35)!important;color:#fff}
+.call-window.is-collapsed{width:208px;border-radius:999px;background:rgba(8,10,14,.68)!important;box-shadow:0 8px 24px rgba(0,0,0,.2)!important}
+.call-window-head{border-bottom-color:rgba(255,255,255,.12);color:rgba(255,255,255,.76)}
+.call-window-head button,.collapsed-call button{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.1);color:#fff;box-shadow:none}
+.call-window-name{color:#fff}.call-window-status{color:rgba(255,255,255,.68)}
+.call-window-avatar{box-shadow:0 8px 22px rgba(0,0,0,.18)}
+.call-window-actions{display:grid;grid-template-columns:1fr 1fr}.call-window-actions .end-group{background:rgba(255,255,255,.14)}
+.collapsed-call{height:50px;padding:6px 7px 6px 8px;gap:7px}
+.collapsed-icon{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:12px;font-weight:800}
+.collapsed-copy strong{color:#fff}.collapsed-copy small{color:rgba(255,255,255,.62)}
+.collapsed-hangup{background:rgba(255,78,94,.24)!important;border-color:rgba(255,108,120,.35)!important;color:#fff!important}
+@media(max-width:560px){.call-window{width:min(224px,calc(100vw - 30px))}.call-window.is-collapsed{width:min(208px,calc(100vw - 30px))}}
+</style>

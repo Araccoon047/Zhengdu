@@ -1,6 +1,6 @@
 import { computed, reactive, watch } from 'vue'
 import musicData from './data/music.json'
-import { sendIncomingText } from './chat'
+import { sendIncomingText, showAppNotice } from './chat'
 import { toPlayUrl } from './netease-music'
 
 const LIBRARY_KEY = 'zhengdu_music_library_v1'
@@ -36,16 +36,20 @@ const builtinTracks = (musicData.tracks || []).map((track) => {
 })
 
 export const MUSIC_MODES = [
-  { id: 'list', label: '列表播放' },
-  { id: 'shuffle', label: '随机播放' },
-  { id: 'single', label: '单曲循环' },
+  { id: 'order', label: '顺序播放', icon: '☷' },
+  { id: 'shuffle', label: '随机播放', icon: '⤨' },
+  { id: 'single', label: '单曲循环', icon: '↻¹' },
+  { id: 'list', label: '列表循环', icon: '↻' },
 ]
 export const MUSIC_SETTINGS_DEFAULTS = Object.freeze({
-  floatEnabled: true,
+  floatEnabled: false,
+  floatOpacity: 92,
+  floatNudgeTexts: ["被你发现了","一起听完这首歌吧","今天也在这里陪你","再靠近一点"],
   requestChance: 5,
   requestChanceRandom: false,
   cooldownMinutes: 10,
   widgetCoverMode: 'song',
+  widgetLayout: 'wide',
   taReserveChance: 6,
   taReserveChanceRandom: false,
   taNextChance: 15,
@@ -54,6 +58,7 @@ export const MUSIC_SETTINGS_DEFAULTS = Object.freeze({
   taRandomChanceRandom: false,
   taModeChance: 5,
   taModeChanceRandom: false,
+  taMode: 'random',
   taPauseEnabled: true,
   taPauseChance: 3,
   taPauseChanceRandom: false,
@@ -82,11 +87,14 @@ function loadObject(key, fallback = {}) {
 function loadSettings() {
   const saved = loadObject(SETTINGS_KEY)
   return {
-    floatEnabled: saved.floatEnabled === undefined ? true : Boolean(saved.floatEnabled),
+    floatEnabled: saved.floatEnabled === undefined ? false : Boolean(saved.floatEnabled),
+    floatOpacity: Math.min(100, Math.max(20, Number(saved.floatOpacity) || 92)),
+    floatNudgeTexts: MUSIC_SETTINGS_DEFAULTS.floatNudgeTexts.map((fallback, index) => String(Array.isArray(saved.floatNudgeTexts) ? saved.floatNudgeTexts[index] ?? fallback : fallback).trim().slice(0, 50) || fallback),
     requestChance: Math.min(30, Math.max(0, Number(saved.requestChance) || 5)),
     requestChanceRandom: Boolean(saved.requestChanceRandom),
     cooldownMinutes: [0, 5, 10].includes(Number(saved.cooldownMinutes)) ? Number(saved.cooldownMinutes) : 10,
     widgetCoverMode: saved.widgetCoverMode === 'playlist' ? 'playlist' : 'song',
+    widgetLayout: saved.widgetLayout === 'square' ? 'square' : 'wide',
     taReserveChance: Math.min(100, Math.max(0, Number(saved.taReserveChance) || 6)),
     taReserveChanceRandom: Boolean(saved.taReserveChanceRandom),
     taNextChance: Math.min(100, Math.max(0, Number(saved.taNextChance) || 15)),
@@ -95,6 +103,7 @@ function loadSettings() {
     taRandomChanceRandom: Boolean(saved.taRandomChanceRandom),
     taModeChance: Math.min(100, Math.max(0, Number(saved.taModeChance) || 5)),
     taModeChanceRandom: Boolean(saved.taModeChanceRandom),
+    taMode: ['order', 'shuffle', 'single', 'list', 'random'].includes(saved.taMode) ? saved.taMode : 'random',
     taPauseEnabled: saved.taPauseEnabled === undefined ? true : Boolean(saved.taPauseEnabled),
     taPauseChance: Math.min(100, Math.max(0, Number(saved.taPauseChance) || 3)),
     taPauseChanceRandom: Boolean(saved.taPauseChanceRandom),
@@ -117,12 +126,14 @@ export const musicState = reactive({
   playing: false,
   currentTime: 0,
   duration: 0,
-  mode: ['list', 'shuffle', 'single'].includes(currentSaved.mode) ? currentSaved.mode : 'list',
+  mode: ['order', 'shuffle', 'single', 'list'].includes(currentSaved.mode) ? currentSaved.mode : 'list',
   queue: Array.isArray(currentSaved.queue) ? currentSaved.queue : [],
   floatClosed: false,
   floatMin: false,
   lastAction: '',
   loadingTrackId: '',
+  changeDirection: 'next',
+  changeSerial: 0,
 })
 export const musicSettings = reactive(loadSettings())
 
@@ -270,6 +281,16 @@ function requestCooldownReady() {
     return true
   }
 }
+function setTaMusicAction(text) {
+  musicState.lastAction = text
+  showAppNotice({
+    actionPage: 'music',
+    name: '争渡音乐',
+    avatar: '♪',
+    color: 'var(--theme-primary)',
+    text,
+  })
+}
 function markRequestTime() {
   try { localStorage.setItem(REQUEST_TIME_KEY, String(Date.now())) } catch {}
 }
@@ -279,7 +300,7 @@ function scheduleInvite(track) {
   inviteTimer = setTimeout(() => {
     addInviteHistory(track, '概率邀请')
     markRequestTime()
-    musicState.lastAction = `TA 邀请你一起听《${track.name}》`
+    setTaMusicAction(`TA 邀请你一起听《${track.name}》`)
     sendIncomingText(`想和你一起听《${track.name}》`)
   }, 5000)
 }
@@ -288,7 +309,7 @@ function scheduleTaFavorite(track) {
   if (!track || !chance(musicSettings.taFavoriteChance, musicSettings.taFavoriteChanceRandom)) return
   favoriteTimer = setTimeout(() => {
     if (!musicState.taFavorites.includes(track.id)) musicState.taFavorites = [track.id, ...musicState.taFavorites]
-    musicState.lastAction = `TA 收藏了《${track.name}》`
+    setTaMusicAction(`TA 收藏了《${track.name}》`)
     persistAll()
   }, 6500)
 }
@@ -298,7 +319,7 @@ function scheduleTaPause(track) {
   pauseTimer = setTimeout(() => {
     if (musicState.currentId !== track.id || !musicState.playing) return
     pauseMusic()
-    musicState.lastAction = `TA 暂停了《${track.name}》`
+    setTaMusicAction(`TA 暂停了《${track.name}》`)
     setTimeout(() => { if (musicState.currentId === track.id) playMusic() }, 2600)
   }, 15000)
 }
@@ -308,7 +329,7 @@ function scheduleTaNext(track) {
   nextTimer = setTimeout(() => {
     if (musicState.currentId !== track.id || !musicState.playing) return
     playNext()
-    musicState.lastAction = 'TA 主动切了下一首'
+    setTaMusicAction('TA 主动切了下一首')
   }, 8000 + Math.random() * 120000)
 }
 function armTaActions() {
@@ -327,7 +348,7 @@ function reserveRandomTrack() {
   if (!pool.length || !chance(musicSettings.taReserveChance, musicSettings.taReserveChanceRandom)) return
   const track = pool[Math.floor(Math.random() * pool.length)]
   musicState.queue = [...musicState.queue, track.id]
-  musicState.lastAction = `TA 把《${track.name}》加入了播放队列`
+  setTaMusicAction(`TA 把《${track.name}》加入了播放队列`)
 }
 async function resolvePlayableUrl(track) {
   if (!track) return ''
@@ -346,6 +367,9 @@ export async function playTrack(id, options = {}) {
   const player = initAudio()
   if (!player) return false
   musicState.loadingTrackId = id
+  const previousId = musicState.currentId
+  const previousIndex = musicState.library.findIndex((item) => item.id === previousId)
+  const nextIndex = musicState.library.findIndex((item) => item.id === id)
   try {
     const url = await resolvePlayableUrl(track)
     if (!url) {
@@ -353,6 +377,9 @@ export async function playTrack(id, options = {}) {
       return false
     }
     if (musicState.currentId !== id) {
+      musicState.changeDirection = options.direction
+        || (previousIndex >= 0 && nextIndex >= 0 && nextIndex < previousIndex ? 'prev' : 'next')
+      musicState.changeSerial += 1
       musicState.currentId = id
       musicState.currentTime = 0
       musicState.duration = Number(track.duration) || 0
@@ -397,25 +424,30 @@ export function seekMusic(seconds) {
   musicState.currentTime = value
 }
 
-export function playNext() {
+export function playNext(options = {}) {
   let nextId = musicState.queue[0]
   if (nextId) musicState.queue = musicState.queue.slice(1)
   if (!nextId) {
     const list = musicState.library
     if (!list.length) return false
     const index = Math.max(0, list.findIndex((track) => track.id === musicState.currentId))
+    if (musicState.mode === 'order' && options.auto === true && index >= list.length - 1) {
+      pauseMusic()
+      return false
+    }
+    const shufflePool = list.length > 1 ? list.filter((item) => item.id !== musicState.currentId) : list
     const next = musicState.mode === 'shuffle'
-      ? list[Math.floor(Math.random() * list.length)]
+      ? shufflePool[Math.floor(Math.random() * shufflePool.length)]
       : list[(index + 1) % list.length]
     nextId = next.id
   }
-  return playTrack(nextId)
+  return playTrack(nextId, { direction: 'next' })
 }
 export function playPrev() {
   const list = musicState.library
   if (!list.length) return false
   const index = Math.max(0, list.findIndex((track) => track.id === musicState.currentId))
-  return playTrack(list[(index - 1 + list.length) % list.length].id)
+  return playTrack(list[(index - 1 + list.length) % list.length].id, { direction: 'prev' })
 }
 export function handleTrackEnded() {
   const track = currentTrack.value
@@ -427,20 +459,24 @@ export function handleTrackEnded() {
   if (track && chance(musicSettings.taRandomChance, musicSettings.taRandomChanceRandom)) {
     const pool = musicState.library.filter((item) => item.id !== track.id)
     if (pool.length) {
-      musicState.lastAction = 'TA 随机切了一首歌'
-      playTrack(pool[Math.floor(Math.random() * pool.length)].id)
+      setTaMusicAction('TA 随机切了一首歌')
+      playTrack(pool[Math.floor(Math.random() * pool.length)].id, { direction: 'next' })
       return
     }
   }
   if (track && chance(musicSettings.taModeChance, musicSettings.taModeChanceRandom)) {
     const modes = MUSIC_MODES.map((item) => item.id)
-    musicState.mode = modes[(modes.indexOf(musicState.mode) + 1) % modes.length]
-    musicState.lastAction = 'TA 切换了播放模式'
+    const selectedMode = musicSettings.taMode === 'random'
+      ? modes[Math.floor(Math.random() * modes.length)]
+      : musicSettings.taMode
+    if (modes.includes(selectedMode)) musicState.mode = selectedMode
+    const modeLabel = MUSIC_MODES.find((item) => item.id === musicState.mode)?.label || '随机播放'
+    setTaMusicAction(`TA 将播放模式切换为「${modeLabel}」`)
   }
-  playNext()
+  playNext({ auto: true })
 }
 export function setMusicMode(mode) {
-  if (!['list', 'shuffle', 'single'].includes(mode)) return
+  if (!['order', 'shuffle', 'single', 'list'].includes(mode)) return
   musicState.mode = mode
   persistAll()
 }
@@ -620,9 +656,8 @@ function probePlayable(songId) {
 
 /**
  * 批量检测网易云会员/付费歌曲。
- * 两类会被判为可清理：
- *   1. blocked：探测不可播（会员/付费/链接失效）
- *   2. preview：能播但时长只有 30 秒上下，是会员试听片段
+ * preview：能播但时长只有 30 秒上下，会被一键清理。
+ * blocked：完全不可播，仅作为检测结果返回，不自动删除。
  * @param {(progress: { done: number, total: number }) => void} [onProgress]
  * @returns {Promise<{ ok: boolean, total: number, probed: number, candidates: number,
  *   unplayable: object[], preview: object[], removable: object[], unknown: number }>}
@@ -677,9 +712,8 @@ export async function scanUnplayableNetease(onProgress) {
 
   const unplayable = candidates.filter((track) => blockedIds.has(String(track.sourceId)))
   const preview = candidates.filter((track) => previewIds.has(String(track.sourceId)))
-  const removable = candidates.filter(
-    (track) => blockedIds.has(String(track.sourceId)) || previewIds.has(String(track.sourceId))
-  )
+  // 清理功能只删除“能播放但只有试听片段”的会员歌曲，完全不可播的歌曲不自动删除。
+  const removable = preview
 
   return {
     ok: probed > 0,
@@ -748,7 +782,7 @@ export function clearMusicHistory() {
   persistAll()
 }
 export function resetMusicSettings() {
-  Object.assign(musicSettings, MUSIC_SETTINGS_DEFAULTS)
+  Object.assign(musicSettings, MUSIC_SETTINGS_DEFAULTS, { floatNudgeTexts: [...MUSIC_SETTINGS_DEFAULTS.floatNudgeTexts] })
   persistAll()
 }
 

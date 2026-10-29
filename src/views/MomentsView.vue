@@ -101,8 +101,11 @@ const replyActivities = computed(() => {
         id: `like-${post.id}-${like.contactId}`,
         type: 'like',
         name: like.name || 'TA',
+        contactId: like.contactId,
+        avatar: contactById(like.contactId)?.avatar || like.name?.slice(0, 1) || 'TA',
+        avatarImage: contactById(like.contactId)?.avatarImage || '',
         postText: postExcerpt(post.text),
-        createdAt: post.createdAt,
+        createdAt: like.createdAt || post.createdAt,
         comment: '',
       })
     }
@@ -113,9 +116,26 @@ const replyActivities = computed(() => {
         id: `comment-${comment.id}`,
         type: 'comment',
         name: comment.name || 'TA',
+        contactId: comment.contactId,
+        avatar: contactById(comment.contactId)?.avatar || comment.name?.slice(0, 1) || 'TA',
+        avatarImage: contactById(comment.contactId)?.avatarImage || '',
         postText: postExcerpt(post.text),
-        createdAt: post.createdAt,
+        createdAt: comment.createdAt || post.createdAt,
         comment: comment.text || '',
+      })
+    }
+    for (const favorite of post.contactFavorites || []) {
+      if (isContactHome.value && favorite.contactId !== viewedContact.value?.id) continue
+      activities.push({
+        id: `favorite-${post.id}-${favorite.contactId}`,
+        type: 'favorite',
+        name: favorite.name || 'TA',
+        contactId: favorite.contactId,
+        avatar: contactById(favorite.contactId)?.avatar || favorite.name?.slice(0, 1) || 'TA',
+        avatarImage: contactById(favorite.contactId)?.avatarImage || '',
+        postText: postExcerpt(post.text),
+        createdAt: favorite.createdAt || post.createdAt,
+        comment: '',
       })
     }
   }
@@ -254,12 +274,12 @@ function submitComment(post) {
   activeCommentId.value = ''
 }
 
-function activityAvatar() {
-  return currentContact.value?.avatarImage || ''
+function activityAvatar(activity) {
+  return activity?.avatarImage || currentContact.value?.avatarImage || ''
 }
 
 function activityAvatarText(activity) {
-  return currentContact.value?.avatar || activity.name?.slice(0, 1) || 'TA'
+  return activity?.avatar || currentContact.value?.avatar || activity.name?.slice(0, 1) || 'TA'
 }
 
 onMounted(() => {
@@ -357,13 +377,13 @@ onUnmounted(() => {
     <div v-if="activeTab === 'replies'" class="panel reply-panel">
       <article v-for="activity in replyActivities" :key="activity.id" class="activity-item">
         <span class="activity-avatar">
-          <img v-if="activityAvatar()" :src="activityAvatar()" alt="" />
+          <img v-if="activityAvatar(activity)" :src="activityAvatar(activity)" alt="" />
           <template v-else>{{ activityAvatarText(activity) }}</template>
         </span>
         <div class="activity-main">
           <p class="activity-text">
             <strong>{{ activity.name }}</strong>
-            {{ activity.type === 'like' ? '点赞了你的朋友圈' : '评论了你的朋友圈' }}
+            {{ activity.type === 'like' ? '点赞了你的朋友圈' : activity.type === 'favorite' ? '收藏了你的朋友圈' : '评论了你的朋友圈' }}
           </p>
           <p v-if="activity.postText" class="activity-excerpt">{{ activity.postText }}</p>
           <div v-if="activity.comment" class="activity-comment">{{ activity.comment }}</div>
@@ -635,8 +655,8 @@ onUnmounted(() => {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 118%;
-  height: 118%;
+  width: 120%;
+  height: 120%;
   max-width: none;
   object-fit: contain;
   transform: translate(-50%, -50%);
@@ -897,8 +917,8 @@ onUnmounted(() => {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 116%;
-  height: 116%;
+  width: 120%;
+  height: 120%;
   max-width: none;
   object-fit: contain;
   transform: translate(-50%, -50%);

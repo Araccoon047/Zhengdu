@@ -73,6 +73,7 @@ export function createNativeLauncherShortcut(dataUrl, label) {
   return Boolean(call('createLauncherShortcut', String(dataUrl), String(label || '争渡')))
 }
 
+
 export function nativeAppVersion() {
   if (!isNativeApp()) return ''
   try {

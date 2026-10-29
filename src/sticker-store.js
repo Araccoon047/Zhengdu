@@ -32,10 +32,11 @@ export async function listStickers() {
 
 export async function putSticker(sticker) {
   const db = await openDb()
+  const storedSticker = JSON.parse(JSON.stringify(sticker))
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).put(sticker)
-    tx.oncomplete = () => resolve(sticker)
+    tx.objectStore(STORE_NAME).put(storedSticker)
+    tx.oncomplete = () => resolve(storedSticker)
     tx.onerror = () => reject(tx.error)
   })
 }

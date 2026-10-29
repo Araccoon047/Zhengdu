@@ -1,4 +1,4 @@
-import { isNativeApp, requestNativeJson } from './native-bridge'
+import { isNativeApp, requestNativeJson } from './native-bridge.js'
 
 export const AI_PROVIDERS = [
   {
@@ -32,6 +32,16 @@ export const AI_PROVIDERS = [
     model: '',
   },
 ]
+
+const LANGUAGE_PROMPT_NAMES = {
+  zh: '简体中文',
+  ja: '日语',
+  ko: '韩语',
+  ru: '俄语',
+  ar: '阿拉伯语',
+  th: '泰语',
+  en: '英语',
+}
 
 export function createDefaultAiSettings() {
   return {
@@ -84,7 +94,7 @@ export function isAiScopeEnabled(config, scope) {
   return false
 }
 
-function buildSystemPrompt(config) {
+function buildInterpretationPrompt(config) {
   const extra = String(config?.rolePrompt || '').trim()
   return [
     '你是角色内容解读助手，只能根据提供的人物背景设定，以该角色的口吻解释给定内容在情境中的含义。',
@@ -94,7 +104,30 @@ function buildSystemPrompt(config) {
   ].filter(Boolean).join('\n')
 }
 
-export async function requestAiInterpretation(config, payload = {}) {
+function buildTranslationPrompt(sourceLanguage, targetLanguage) {
+  const sourceName = LANGUAGE_PROMPT_NAMES[sourceLanguage] || sourceLanguage
+  const targetName = LANGUAGE_PROMPT_NAMES[targetLanguage] || targetLanguage
+  return [
+    `你是专业翻译。请把用户给出的${sourceName}文本准确翻译成${targetName}。`,
+    '只输出译文，不要解释、不要总结、不要扩写，也不要添加原文没有的信息。',
+    '保留原文的语气、人名、专有名词、标点、换行和分段。',
+  ].join('\n')
+}
+
+function extractCompletionText(data) {
+  const content = data?.choices?.[0]?.message?.content
+  if (typeof content === 'string') return content.trim()
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+      .join('')
+      .trim()
+  }
+  const fallback = data?.output_text || data?.response || ''
+  return typeof fallback === 'string' ? fallback.trim() : ''
+}
+
+async function requestAiCompletion(config, payload = {}) {
   if (!isAiConfigured(config)) {
     throw new Error('请先在设置 → AI接入中填写并启用 API')
   }
@@ -102,11 +135,6 @@ export async function requestAiInterpretation(config, payload = {}) {
   if (!/^https?:\/\//i.test(endpoint)) {
     throw new Error('AI 接口地址必须以 http:// 或 https:// 开头')
   }
-  const characterName = String(payload.characterName || 'TA').trim()
-  const backstory = String(payload.backstory || '').trim() || '未填写角色背景设定'
-  const contentType = String(payload.contentType || '内容').trim()
-  const content = String(payload.content || '').trim()
-  if (!content) throw new Error('没有可解读的内容')
 
   const headers = {
     'Content-Type': 'application/json',
@@ -117,20 +145,11 @@ export async function requestAiInterpretation(config, payload = {}) {
   const requestBody = {
     model: config.model,
     messages: [
-      { role: 'system', content: buildSystemPrompt(config) },
-      {
-        role: 'user',
-        content: [
-          `角色名称：${characterName}`,
-          `角色背景设定：${backstory}`,
-          `解读类型：${contentType}`,
-          `需要解读的原文：${content}`,
-          '请只返回一段以角色口吻写出的解读文字。',
-        ].join('\n\n'),
-      },
+      { role: 'system', content: payload.systemPrompt },
+      { role: 'user', content: payload.userPrompt },
     ],
-    temperature: Number(config.temperature) || 0.7,
-    max_tokens: Number(config.maxTokens) || 500,
+    temperature: Number(payload.temperature ?? config.temperature) || 0.7,
+    max_tokens: Number(payload.maxTokens ?? config.maxTokens) || 500,
   }
 
   const controller = new AbortController()
@@ -170,18 +189,51 @@ export async function requestAiInterpretation(config, payload = {}) {
       const message = data?.error?.message || data?.message || raw.slice(0, 220) || responseStatusText
       throw new Error(`AI 接口请求失败（${responseStatus}）：${message}`)
     }
-    const text =
-      data?.choices?.[0]?.message?.content ||
-      data?.output_text ||
-      data?.response ||
-      ''
-    if (typeof text !== 'string' || !text.trim()) {
-      throw new Error('AI 接口没有返回可用的解读内容')
-    }
-    return text.trim()
+    const text = extractCompletionText(data)
+    if (!text) throw new Error('AI 接口没有返回可用内容')
+    return text
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('AI 请求超时，请检查网络或接口地址')
-    throw error  } finally {
+    throw error
+  } finally {
     clearTimeout(timeout)
   }
+}
+
+export async function requestAiInterpretation(config, payload = {}) {
+  const characterName = String(payload.characterName || 'TA').trim()
+  const backstory = String(payload.backstory || '').trim() || '未填写角色背景设定'
+  const contentType = String(payload.contentType || '内容').trim()
+  const content = String(payload.content || '').trim()
+  if (!content) throw new Error('没有可解读的内容')
+
+  return requestAiCompletion(config, {
+    systemPrompt: buildInterpretationPrompt(config),
+    userPrompt: [
+      `角色名称：${characterName}`,
+      `角色背景设定：${backstory}`,
+      `解读类型：${contentType}`,
+      `需要解读的原文：${content}`,
+      '请只返回一段以角色口吻写出的解读文字。',
+    ].join('\n\n'),
+    temperature: Number(config?.temperature) || 0.7,
+    maxTokens: Number(config?.maxTokens) || 500,
+  })
+}
+
+export async function requestAiTranslation(config, payload = {}) {
+  if (!isAiConfigured(config)) {
+    throw new Error('请先在设置 → AI接入中填写并启用 API')
+  }
+  const text = String(payload.text || '').trim()
+  if (!text) throw new Error('没有可翻译的文字')
+  const sourceLanguage = String(payload.sourceLanguage || 'en')
+  const targetLanguage = String(payload.targetLanguage || 'zh')
+
+  return requestAiCompletion(config, {
+    systemPrompt: buildTranslationPrompt(sourceLanguage, targetLanguage),
+    userPrompt: text,
+    temperature: 0,
+    maxTokens: Math.max(300, Number(config.maxTokens) || 500),
+  })
 }

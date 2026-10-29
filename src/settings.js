@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import { createDefaultChatToolSettings, normalizeChatToolSettings } from './chat-tools'
 import { createDefaultAiSettings, normalizeAiSettings } from './ai'
+import { createDefaultSplashSettings, normalizeSplashSettings } from './splash'
 
 const STORAGE_KEY = 'zhengdu_custom_settings_v1'
 
@@ -41,6 +42,10 @@ export const CONTACT_AUTO_DEFAULTS = Object.freeze({
   letterReplyChanceRandom: false,
   noReplyChance: 0,
   noReplyChanceRandom: false,
+  replyDelayMinSeconds: 4,
+  replyDelayMaxSeconds: 7,
+  replyMessageMin: 1,
+  replyMessageMax: 1,
   touchChance: 5,
   touchChanceRandom: false,
   stickerChance: 10,
@@ -107,6 +112,7 @@ export const CONTACT_AUTO_DEFAULTS = Object.freeze({
   diaryQuoteCardMax: 8,
   diaryMoodEnabled: true,
 })
+
 export const SITE_THEMES = [
   {
     id: 'default',
@@ -129,9 +135,40 @@ export const SITE_THEMES = [
   {
     id: 'peach',
     name: '芝芝桃',
-    description: '粉桃色系气泡聊天',
+    description: '粉桃色系聊天主题',
     className: 'theme-peach',
-  },]
+  },
+  {
+    id: 'thinCocoa',
+    name: '薄巧 by 淅沥沥',
+    description: '薄荷、奶咖、手绘头像框与薄巧气泡',
+    className: 'theme-thin-cocoa',
+  },
+  {
+    id: 'strawberryMilk',
+    name: '白巧草莓乳',
+    description: '草莓粉、奶油白与柔和暖色',
+    className: 'theme-strawberry-milk',
+  },
+  {
+    id: 'daidaiTu',
+    name: 'eve全局 · 呆呆兔 by X000',
+    description: '奶白半透明、兔子横幅与柔软圆气泡',
+    className: 'theme-daidai-tu',
+  },
+  {
+    id: 'berlinSnow',
+    name: '柏林雪季',
+    description: '冰白磨砂、细灰边框与旋转雪花',
+    className: 'theme-berlin-snow',
+  },
+  {
+    id: 'faintSilk',
+    name: 'Faint Silk · 浅丝 by 落吟',
+    description: '浅灰丝光、透明磨砂与克制细边',
+    className: 'theme-faint-silk',
+  },
+]
 export const DEFAULT_HOME_LAYOUT = [
   { id: 'anniversary-card', page: 0, x: 0, y: 0 },
   { id: 'album', page: 0, x: 0, y: 2 },
@@ -151,11 +188,16 @@ export const DEFAULT_HOME_LAYOUT = [
   { id: 'memory', page: 1, x: 1, y: 1 },
   { id: 'ta-today-card', page: 1, x: 2, y: 1 },
   { id: 'avatarLib', page: 1, x: 0, y: 2 },
+  { id: 'wishlist', page: 2, x: 0, y: 2 },
   { id: 'music-widget', page: 1, x: 0, y: 4 },
+  { id: 'photo-carousel-card', page: 2, x: 0, y: 0 },
 ]
 export const defaultSettings = {
   siteTheme: 'echoes',
   siteFont: 'default',
+  customFontUrl: '',
+  customFontFamily: 'ZhengduCustomFont',
+  customFontPresets: [],
   userName: '我',
   userBio: '一只淡海蓝的小手机',
   opponentName: '淅沥沥',
@@ -167,6 +209,9 @@ export const defaultSettings = {
   chatBackgroundOpacity: 60,
   homeBackground: '',
   homeBackgroundOpacity: 60,
+  photoCarouselSpeed: 4.5,
+  photoCarouselPhotoSize: 76,
+  photoCarouselHeight: 2,
   momentsBackground: '',
   momentsBackgroundOpacity: 100,
   replyCards: [...DEFAULT_REPLY_CARDS],
@@ -186,6 +231,7 @@ export const defaultSettings = {
   typingIndicatorText: '正在挑选字卡',
   enterForNewline: false,
   customNudgeSymbols: [],
+  customDiaryMoods: [],
   customNudgeTexts: [],
   letterMinInterval: 120,
   letterMaxInterval: 360,
@@ -210,11 +256,19 @@ export const defaultSettings = {
   contactAutoSettings: {},
   chatTools: createDefaultChatToolSettings(),
   ai: createDefaultAiSettings(),
+  ...createDefaultSplashSettings(),
   themeTextColor: '',
   themeAppIconColor: '',
   themeDockColor: '',
   chatBubbleSkin: 'default',
+  userAvatarFrameSkin: 'none',
+  contactAvatarFrameSkin: 'none',
   avatarFrameSkin: 'none',
+  transferCardSkin: 'follow',
+  statusBubbleSkin: 'follow',
+  userAvatarFrameOffsetX: 0,
+  userAvatarFrameOffsetY: 0,
+  userAvatarFrameScale: 1,
   customBubbleSkins: [],
   customAvatarFrameSkins: [],
   anniversaryTitle: '我们在一起已经',
@@ -225,6 +279,7 @@ export const defaultSettings = {
   // 纪念日关系类型（love 爱情向 / family 亲情向 / friend 友情向）与关系称呼（选填）
   anniversaryType: 'love',
   anniversaryRole: '',
+  anniversaryShowAvatarFrames: true,
   anniversaryAvatarA: '',
   anniversaryAvatarB: '',
   anniversaryBackground: '',
@@ -249,12 +304,22 @@ export const defaultSettings = {
   homeLayout: DEFAULT_HOME_LAYOUT.map((item) => ({ ...item })),
   // 被锁定的系统预设字卡分组（'main:3' 这种 key），锁定的组不参与抽卡
   systemLockedCardGroups: [],
+  systemDeletedCardGroups: [],
+  systemHiddenCardIds: [],
+  systemCardEdits: {},
+  systemCustomCards: [],
 }
 
 function clampNumber(value, min, max, fallback) {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
   return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+function clampDecimal(value, min, max, fallback) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.round(Math.min(max, Math.max(min, n)) * 10) / 10
 }
 
 function normalizeHexColor(value) {
@@ -275,19 +340,30 @@ function normalizeHomeLayout(savedLayout) {
       .filter((item) => item && typeof item.id === 'string')
       .map((item) => [item.id, item])
   )
-  // 决策币 / 查岗摸鱼已下线：旧布局里还带着这两个 id 时，直接按新的默认布局重排一次，
-  // 免得首页留下两个点不到的空格
   const retired = ['coin', 'checkin', 'askRecords']
   const hasRetired = retired.some((id) => savedById.has(id))
-  return DEFAULT_HOME_LAYOUT.map((defaultItem) => {
+  const normalized = DEFAULT_HOME_LAYOUT.map((defaultItem) => {
     const saved = hasRetired ? {} : (savedById.get(defaultItem.id) || {})
+    const legacyWishlistPage = defaultItem.id === 'wishlist' && Number(saved.page) === 1 && Number(saved.x) === 1 && Number(saved.y) === 2
     return {
       id: defaultItem.id,
-      page: clampNumber(saved.page, 0, 1, defaultItem.page),
+      page: legacyWishlistPage ? 2 : clampNumber(saved.page, 0, 2, defaultItem.page),
       x: clampNumber(saved.x, 0, 3, defaultItem.x),
       y: clampNumber(saved.y, 0, 7, defaultItem.y),
     }
   })
+  const defaultIds = new Set(DEFAULT_HOME_LAYOUT.map((item) => item.id))
+  const optionalWidget = savedById.get('wish-widget')
+  if (optionalWidget && !defaultIds.has('wish-widget')) {
+    const legacyWidgetPage = Number(optionalWidget.page) === 1 && Number(optionalWidget.x) === 2 && Number(optionalWidget.y) === 2
+    normalized.push({
+      id: 'wish-widget',
+      page: legacyWidgetPage ? 2 : clampNumber(optionalWidget.page, 0, 2, 2),
+      x: legacyWidgetPage ? 1 : clampNumber(optionalWidget.x, 0, 3, 1),
+      y: legacyWidgetPage ? 2 : clampNumber(optionalWidget.y, 0, 7, 2),
+    })
+  }
+  return normalized
 }
 function normalizeCustomIconThemes(value) {
   const usedIds = new Set()
@@ -340,14 +416,26 @@ function normalize(saved = {}) {
   const customIconThemes = normalizeCustomIconThemes(saved.customIconThemes)
   const validIconThemeIds = ['default', 'ins-gray', ...customIconThemes.map((theme) => theme.id)]
   const legacyReplyMax = clampNumber(saved.maxReplyCards, 1, 10, 1)
+  const legacyAvatarFrameSkin = String(saved.avatarFrameSkin || defaultSettings.avatarFrameSkin)
+  const splashSettings = normalizeSplashSettings(saved)
   const replyCardCountMin = clampNumber(saved.replyCardCountMin, 1, 10, 1)
   const replyCardCountMax = Math.max(
     replyCardCountMin,
     clampNumber(saved.replyCardCountMax, 1, 10, legacyReplyMax)
   )
   return {
-    siteTheme: ['default', 'echoes', 'glass', 'peach'].includes(saved.siteTheme) ? saved.siteTheme : 'echoes',
-    siteFont: ['default', 'pixel'].includes(saved.siteFont) ? saved.siteFont : 'default',
+    siteTheme: SITE_THEMES.some((theme) => theme.id === saved.siteTheme) ? saved.siteTheme : 'echoes',
+    siteFont: ['default', 'pixel', 'custom'].includes(saved.siteFont) ? saved.siteFont : 'default',
+    customFontUrl: String(saved.customFontUrl ?? '').trim(),
+    customFontFamily: String(saved.customFontFamily ?? 'ZhengduCustomFont').trim().slice(0, 80) || 'ZhengduCustomFont',
+    customFontPresets: (Array.isArray(saved.customFontPresets) ? saved.customFontPresets : [])
+      .filter((preset) => preset && preset.id && preset.name && typeof preset.url === 'string')
+      .map((preset, index) => ({
+        id: String(preset.id || `font-preset-${index + 1}`).slice(0, 80),
+        name: String(preset.name || '').trim().slice(0, 30),
+        url: String(preset.url || '').slice(0, 12000),
+        family: String(preset.family || 'ZhengduCustomFont').trim().slice(0, 80) || 'ZhengduCustomFont',
+      })).filter((preset) => preset.name && preset.url).slice(0, 30),
     userName: String(saved.userName ?? defaultSettings.userName).trim() || defaultSettings.userName,
     userBio: String(saved.userBio ?? defaultSettings.userBio).trim(),
     opponentName:
@@ -372,6 +460,9 @@ function normalize(saved = {}) {
     homeBackground:
       typeof saved.homeBackground === 'string' ? saved.homeBackground : '',
     homeBackgroundOpacity: clampNumber(saved.homeBackgroundOpacity, 0, 100, 60),
+    photoCarouselSpeed: clampDecimal(saved.photoCarouselSpeed, 1, 20, 4.5),
+    photoCarouselPhotoSize: clampNumber(saved.photoCarouselPhotoSize, 35, 90, 76),
+    photoCarouselHeight: clampNumber(saved.photoCarouselHeight, 1, 4, 2),
     momentsBackground:
       typeof saved.momentsBackground === 'string' ? saved.momentsBackground : '',
     momentsBackgroundOpacity: 100,
@@ -404,6 +495,13 @@ function normalize(saved = {}) {
       defaultSettings.typingIndicatorText,
     enterForNewline: Boolean(saved.enterForNewline),
     customNudgeSymbols,
+    customDiaryMoods: [
+      ...new Set(
+        (Array.isArray(saved.customDiaryMoods) ? saved.customDiaryMoods : [])
+          .map((item) => String(item || '').trim().slice(0, 16))
+          .filter(Boolean)
+      ),
+    ].slice(0, 30),
     customNudgeTexts,
     letterMinInterval: clampNumber(
       saved.letterMinInterval,
@@ -470,6 +568,7 @@ function normalize(saved = {}) {
         : {},
     chatTools: normalizeChatToolSettings(saved.chatTools),
     ai: normalizeAiSettings(saved.ai),
+    ...splashSettings,
     appIconTheme: validIconThemeIds.includes(saved.appIconTheme)
       ? saved.appIconTheme
       : defaultSettings.appIconTheme,
@@ -477,9 +576,30 @@ function normalize(saved = {}) {
     themeAppIconColor: normalizeHexColor(saved.themeAppIconColor),
     themeDockColor: normalizeHexColor(saved.themeDockColor),
     chatBubbleSkin: String(saved.chatBubbleSkin || defaultSettings.chatBubbleSkin),
-    avatarFrameSkin: String(saved.avatarFrameSkin || defaultSettings.avatarFrameSkin),
+    userAvatarFrameSkin: String(saved.userAvatarFrameSkin ?? legacyAvatarFrameSkin),
+    contactAvatarFrameSkin: String(saved.contactAvatarFrameSkin ?? legacyAvatarFrameSkin),
+    avatarFrameSkin: legacyAvatarFrameSkin,
+    transferCardSkin: (['follow', 'seal', 'mono', 'maotaotao'].includes(saved.transferCardSkin) || SITE_THEMES.some((theme) => 'theme-' + theme.id === saved.transferCardSkin)) ? saved.transferCardSkin : 'follow',
+    statusBubbleSkin: ['follow', 'seal', 'mono', 'maotaotao'].includes(saved.statusBubbleSkin) ? saved.statusBubbleSkin : 'follow',
+    userAvatarFrameOffsetX: clampNumber(saved.userAvatarFrameOffsetX, -80, 80, 0),
+    userAvatarFrameOffsetY: clampNumber(saved.userAvatarFrameOffsetY, -80, 80, 0),
+    userAvatarFrameScale: clampDecimal(saved.userAvatarFrameScale, 0.5, 2, 1),
     customBubbleSkins: Array.isArray(saved.customBubbleSkins) ? saved.customBubbleSkins.filter((item) => item && item.id && item.name && typeof item.css === 'string').slice(0, 30) : [],
-    customAvatarFrameSkins: Array.isArray(saved.customAvatarFrameSkins) ? saved.customAvatarFrameSkins.filter((item) => item && item.id && item.name && typeof item.css === 'string').slice(0, 30) : [],
+    customAvatarFrameSkins: Array.isArray(saved.customAvatarFrameSkins)
+      ? saved.customAvatarFrameSkins
+          .filter((item) => item && item.id && item.name && (typeof item.css === 'string' || typeof item.image === 'string'))
+          .map((item) => ({
+            id: String(item.id),
+            name: String(item.name).slice(0, 24),
+            description: String(item.description || '自定义头像框预设').slice(0, 60),
+            css: typeof item.css === 'string' ? item.css : '',
+            image: typeof item.image === 'string' ? item.image : '',
+            offsetX: Math.max(-80, Math.min(80, Math.round(Number(item.offsetX) || 0))),
+            offsetY: Math.max(-80, Math.min(80, Math.round(Number(item.offsetY) || 0))),
+            scale: Math.max(0.5, Math.min(2, Number(item.scale) || 1)),
+          }))
+          .slice(0, 30)
+      : [],
     anniversaryTitle:
       !savedAnniversaryTitle || savedAnniversaryTitle === '遇见你的那一天'
         ? defaultSettings.anniversaryTitle
@@ -503,6 +623,7 @@ function normalize(saved = {}) {
       ? saved.anniversaryType
       : 'love',
     anniversaryRole: String(saved.anniversaryRole ?? '').trim().slice(0, 12),
+    anniversaryShowAvatarFrames: saved.anniversaryShowAvatarFrames !== false,
     anniversaryAvatarA:
       typeof saved.anniversaryAvatarA === 'string' ? saved.anniversaryAvatarA : '',
     anniversaryAvatarB:
@@ -538,6 +659,36 @@ function normalize(saved = {}) {
           .filter((key) => /^[a-z_]+:\d+$/.test(key))
       ),
     ],
+    systemDeletedCardGroups: [
+      ...new Set(
+        (Array.isArray(saved.systemDeletedCardGroups) ? saved.systemDeletedCardGroups : [])
+          .map((key) => String(key || '').trim())
+          .filter((key) => /^[a-z_]+:\d+$/.test(key))
+      ),
+    ],
+    systemHiddenCardIds: [
+      ...new Set(
+        (Array.isArray(saved.systemHiddenCardIds) ? saved.systemHiddenCardIds : [])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean)
+      ),
+    ],
+    systemCardEdits:
+      saved.systemCardEdits && typeof saved.systemCardEdits === 'object'
+        ? Object.fromEntries(
+            Object.entries(saved.systemCardEdits)
+              .map(([id, value]) => [String(id), String(value || '').trim()])
+              .filter(([, value]) => value)
+          )
+        : {},
+    systemCustomCards: (Array.isArray(saved.systemCustomCards) ? saved.systemCustomCards : [])
+      .map((card) => ({
+        id: String(card?.id || '').trim(),
+        categoryKey: String(card?.categoryKey || 'main').trim() || 'main',
+        groupIndex: Math.max(0, Math.round(Number(card?.groupIndex) || 0)),
+        text: String(card?.text || '').trim(),
+      }))
+      .filter((card) => card.id && card.text),
   }
 }
 

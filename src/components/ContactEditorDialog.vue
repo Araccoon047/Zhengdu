@@ -1,6 +1,8 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { cropImage } from '../image-crop'
+import { imageFileToOriginalDataUrl } from '../image-utils'
+import { avatarFrameStyle } from '../avatar-frame-style'
 import { createContact, updateContact } from '../chat'
 import { backgroundLayerStyle } from '../background-style'
 
@@ -25,6 +27,9 @@ watch(
       color: 'var(--theme-primary)',
       avatarImage: '',
       avatarFrame: '',
+      avatarFrameOffsetX: 0,
+      avatarFrameOffsetY: 0,
+      avatarFrameScale: 1,
       chatBackground: '',
       chatBackgroundOpacity: 60,
       momentsCover: '',
@@ -52,6 +57,28 @@ async function pickImage(event, key, options) {
   } catch (e) {
     error.value = e.message || '图片处理失败'
   }
+}
+
+async function pickAvatarFrame(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file?.type?.startsWith('image/') || !draft.value) return
+  error.value = ''
+  try {
+    const result = await imageFileToOriginalDataUrl(file)
+    if (!result) return
+    draft.value.avatarFrame = result
+    draft.value.avatarFrameOffsetX = 0
+    draft.value.avatarFrameOffsetY = 0
+    draft.value.avatarFrameScale = 1
+  } catch (e) {
+    error.value = e.message || '头像框上传失败'
+  }
+}
+
+function adjustFrameScale(delta) {
+  const value = Number(draft.value?.avatarFrameScale) || 1
+  if (draft.value) draft.value.avatarFrameScale = Math.round(Math.max(0.5, Math.min(2, value + delta)) * 100) / 100
 }
 
 function save() {
@@ -83,11 +110,13 @@ function close() {
             <button class="dialog-close" type="button" aria-label="关闭" @click="close">×</button>
           </header>
 
+          <p class="dialog-url-hint">图片链接请使用 PNG / JPG / WebP 的 HTTPS 直链。HTTP 图片在套壳 APP 中会自动尝试通过 HTTPS 图片代理加载；网页链接、需要登录或禁止外链的地址无法作为图片使用。</p>
+
           <div class="avatar-preview-row">
             <span class="editor-avatar" :style="{ background: draft.color }">
               <img v-if="draft.avatarImage" :src="draft.avatarImage" alt="" />
               <template v-else>{{ draft.avatar || 'T' }}</template>
-              <img v-if="draft.avatarFrame" class="editor-frame" :src="draft.avatarFrame" alt="" />
+              <img v-if="draft.avatarFrame" class="editor-frame" :src="draft.avatarFrame" :style="avatarFrameStyle(draft)" alt="" />
             </span>
             <div class="avatar-preview-main">
               <strong>{{ draft.note || draft.name || 'TA' }}</strong>
@@ -133,7 +162,7 @@ function close() {
           <div class="upload-row">
             <label class="upload-button">
               上传聊天背景
-              <input type="file" accept="image/*" @change="pickImage($event, 'chatBackground', { title: '裁剪聊天背景', aspectRatio: 4 / 3, shape: 'rect', maxSide: 1600, quality: 0.84 })" />
+              <input type="file" accept="image/*" @change="pickImage($event, 'chatBackground', { title: '裁剪聊天背景', aspectRatio: 9 / 16, lockAspect: true, shape: 'rect', maxSide: 1600, quality: 0.84 })" />
             </label>
             <button v-if="draft.chatBackground" class="soft-button" type="button" @click="draft.chatBackground = ''">清除</button>
           </div>
@@ -163,10 +192,16 @@ function close() {
           </label>
           <div class="upload-row">
             <label class="upload-button">
-              上传头像框
-              <input type="file" accept="image/*" @change="pickImage($event, 'avatarFrame', { title: '裁剪头像框', aspectRatio: 1, lockAspect: true, shape: 'circle', transparent: true, mimeType: 'image/png', maxSide: 480 })" />
+              上传透明头像框
+              <input type="file" accept="image/*" @change="pickAvatarFrame" />
             </label>
             <button v-if="draft.avatarFrame" class="soft-button" type="button" @click="draft.avatarFrame = ''">清除头像框</button>
+          </div>
+          <div v-if="draft.avatarFrame" class="editor-frame-adjust">
+            <label><span>X 轴</span><input v-model.number="draft.avatarFrameOffsetX" type="range" min="-80" max="80" step="1" /><strong>{{ draft.avatarFrameOffsetX }}px</strong></label>
+            <label><span>Y 轴</span><input v-model.number="draft.avatarFrameOffsetY" type="range" min="-80" max="80" step="1" /><strong>{{ draft.avatarFrameOffsetY }}px</strong></label>
+            <label><span>大小</span><input v-model.number="draft.avatarFrameScale" type="range" min="0.5" max="2" step="0.01" /><strong>{{ Number(draft.avatarFrameScale).toFixed(2) }}×</strong></label>
+            <div class="frame-adjust-buttons"><button type="button" @click="adjustFrameScale(-0.05)">−</button><button type="button" @click="adjustFrameScale(0.05)">＋</button><button type="button" @click="draft.avatarFrameOffsetX = 0; draft.avatarFrameOffsetY = 0; draft.avatarFrameScale = 1">重置</button></div>
           </div>
 
           <div v-if="error" class="dialog-error">{{ error }}</div>
@@ -245,7 +280,7 @@ function close() {
   cursor: pointer;
 }
 
-.avatar-preview-row {
+.dialog-url-hint { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--theme-soft); color: var(--theme-muted); font-size: 9px; line-height: 1.6; }.avatar-preview-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -277,8 +312,8 @@ function close() {
   top: 50%;
   left: 50%;
   z-index: 3;
-  width: 112%;
-  height: 112%;
+  width: 120%;
+  height: 120%;
   max-width: none;
   object-fit: contain;
   border-radius: 0;
@@ -424,7 +459,12 @@ function close() {
   min-height: 100px;
 }
 
-.dialog-error {
+.editor-frame-adjust { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 11px; background: var(--theme-soft); }
+.editor-frame-adjust > label { display: grid; grid-template-columns: 42px minmax(0,1fr) 46px; align-items: center; gap: 8px; color: var(--theme-text); font-size: 9px; }
+.editor-frame-adjust input[type="range"] { width: 100%; accent-color: var(--theme-primary); }
+.editor-frame-adjust strong { color: var(--theme-primary); font-size: 9px; text-align: right; }
+.frame-adjust-buttons { display: flex; gap: 6px; }
+.frame-adjust-buttons button { flex: 1; }.dialog-error {
   color: var(--theme-accent-warm);
   font-size: 11px;
 }

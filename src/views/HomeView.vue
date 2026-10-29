@@ -2,16 +2,23 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import LineGlyph from '../components/LineGlyph.vue'
 import MusicWidgetCard from '../components/MusicWidgetCard.vue'
+import WishWidgetCard from '../components/WishWidgetCard.vue'
+import { HOME_APP_ITEMS as homeApps } from '../home-apps'
+import PhotoCarouselCard from '../components/PhotoCarouselCard.vue'
+import { wishlistState } from '../wishlist'
 import { store, go } from '../store'
 import { homeSession } from '../link-status'
 import { settings, defaultSettings } from '../settings'
 import { appIconSrc } from '../app-icons'
 import { backgroundLayerStyle } from '../background-style'
+import { avatarFrameStyle } from '../avatar-frame-style'
 import { closeChat, primaryContact, drawTaTodayCards } from '../chat'
+import { musicSettings } from '../music-player'
 
 const GRID_GAP = 18
 const PAGE_COLUMNS = 4
 const PAGE_ROWS = 8
+const PAGE_COUNT = 3
 const now = ref(new Date())
 const activePage = ref(store.homePage || 0)
 const layoutEditing = ref(false)
@@ -141,13 +148,19 @@ function parseCardRatio(value, fallback) {
   const match = String(value ?? '').trim().match(/^([1-4])\s*[xX×]\s*([1-8])$/)
   return match ? { w: Number(match[1]), h: Number(match[2]) } : fallback
 }
+function parseWishWidgetSize(value) {
+  const match = String(value || '').trim().match(/^([1-4])\s*[xX×]\s*([1-4])$/)
+  return match ? { w: Number(match[1]), h: Number(match[2]) } : { w: 2, h: 1 }
+}
 
 const cardSizes = computed(() => ({
   'anniversary-card': parseCardRatio(settings.anniversaryCardSize, { w: 4, h: 2 }),
   'time-card': parseCardRatio(settings.timeCardSize, { w: 2, h: 1 }),
   'link-card': parseCardRatio(settings.linkStatusCardSize, { w: 2, h: 1 }),
   'ta-today-card': parseCardRatio(settings.taTodayCardSize, { w: 2, h: 2 }),
-  'music-widget': { w: 4, h: 2 },
+  'music-widget': { w: musicSettings.widgetLayout === 'square' ? 2 : 4, h: 2 },
+  'wish-widget': parseWishWidgetSize(wishlistState.widgetSize),
+  'photo-carousel-card': { w: 4, h: Math.max(1, Math.min(4, Math.round(Number(settings.photoCarouselHeight) || 2))) },
 }))
 
 function getItemSize(id) {
@@ -179,14 +192,14 @@ function findNearestFreePosition(page, targetX, targetY, w, h, occupied, ignoreI
 }
 
 const resolvedLayout = computed(() => {
-  const occupied = [[], []]
+  const occupied = Array.from({ length: PAGE_COUNT }, () => [])
   const result = new Map()
   const saved = [...(settings.homeLayout || [])].sort(
     (a, b) => a.page - b.page || a.y - b.y || a.x - b.x
   )
   for (const item of saved) {
     const size = getItemSize(item.id)
-    const page = Math.max(0, Math.min(1, Number(item.page) || 0))
+    const page = Math.max(0, Math.min(PAGE_COUNT - 1, Number(item.page) || 0))
     const targetX = Math.max(0, Math.min(PAGE_COLUMNS - size.w, Number(item.x) || 0))
     const targetY = Math.max(0, Math.min(PAGE_ROWS - size.h, Number(item.y) || 0))
     const position =
@@ -222,22 +235,6 @@ function itemStyle(id) {
   return style
 }
 
-const homeApps = [
-  { id: 'album', label: '相册', glyph: 'album' },
-  { id: 'journey', label: '日历', glyph: 'journey' },
-  { id: 'music', label: '音乐', glyph: 'music' },
-  { id: 'sms', label: '聊天', glyph: 'sms' },
-  { id: 'moments', label: '朋友圈', glyph: 'moments' },
-  { id: 'stats', label: '消息统计', glyph: 'stats' },
-  { id: 'mail', label: '信箱', glyph: 'mail' },
-  { id: 'pomodoro', label: '番茄钟', glyph: 'pomodoro' },
-  { id: 'tarot', label: '塔罗牌', glyph: 'tarot' },
-  { id: 'questionnaire', label: '问卷', glyph: 'questionnaire' },
-  { id: 'period', label: '经期记录', glyph: 'period' },
-  { id: 'accounting', label: '记账', glyph: 'accounting' },
-  { id: 'memory', label: '纪念日', glyph: 'heart' },
-  { id: 'avatarLib', label: '头像库', glyph: 'user' },
-]
 
 function appsForPage(page) {
   return homeApps
@@ -251,16 +248,17 @@ function appsForPage(page) {
 
 const pageOneApps = computed(() => appsForPage(0))
 const pageTwoApps = computed(() => appsForPage(1))
+const pageThreeApps = computed(() => appsForPage(2))
 const gridStyle = computed(() => ({
   '--grid-gap': `${GRID_GAP}px`,
 }))
 
 const pageTrackStyle = computed(() => ({
-  transform: `translate3d(calc(-${activePage.value * 50}% + ${swipeOffset.value}px), 0, 0)`,
+  transform: `translate3d(calc(-${activePage.value * (100 / PAGE_COUNT)}% + ${swipeOffset.value}px), 0, 0)`,
 }))
 
 function setPage(index) {
-  activePage.value = Math.max(0, Math.min(1, index))
+  activePage.value = Math.max(0, Math.min(PAGE_COUNT - 1, index))
   store.homePage = activePage.value
 }
 
@@ -342,9 +340,9 @@ function handleDragMove(event) {
     const edge = Math.min(30, rect.width * 0.075)
     let pageTarget = -1
     if (activePage.value > 0 && event.clientX <= rect.left + edge && dx < -18 && Math.abs(dx) > Math.abs(dy) * 0.65) {
-      pageTarget = 0
-    } else if (activePage.value < 1 && event.clientX >= rect.right - edge && dx > 18 && Math.abs(dx) > Math.abs(dy) * 0.65) {
-      pageTarget = 1
+      pageTarget = activePage.value - 1
+    } else if (activePage.value < PAGE_COUNT - 1 && event.clientX >= rect.right - edge && dx > 18 && Math.abs(dx) > Math.abs(dy) * 0.65) {
+      pageTarget = activePage.value + 1
     }
     if (pageTarget >= 0) scheduleDragPage(pageTarget)
     else clearDragEdgeTimer()
@@ -443,7 +441,7 @@ function handleTouchMove(event) {
   const viewport = document.querySelector('.home-viewport')
   const width = viewport?.getBoundingClientRect().width || window.innerWidth
   let offset = dx
-  if ((activePage.value === 0 && dx > 0) || (activePage.value === 1 && dx < 0)) offset *= 0.28
+  if ((activePage.value === 0 && dx > 0) || (activePage.value === PAGE_COUNT - 1 && dx < 0)) offset *= 0.28
   offset = Math.max(-width, Math.min(width, offset))
   swipeOffset.value = offset
   swiping.value = true
@@ -460,7 +458,9 @@ function handleTouchEnd(event) {
     swipeOffset.value = 0
     return
   }
-  const nextPage = dx < 0 ? 1 : 0
+  const nextPage = dx < 0
+    ? Math.min(PAGE_COUNT - 1, activePage.value + 1)
+    : Math.max(0, activePage.value - 1)
   if (nextPage !== activePage.value) {
     setPage(nextPage)
     requestAnimationFrame(() => {
@@ -544,9 +544,10 @@ onUnmounted(() => {
                 <span v-else>♡</span>
               </span>
               <img
-                v-if="chatContact?.avatarFrame"
+                v-if="settings.anniversaryShowAvatarFrames && chatContact?.avatarFrame"
                 class="day-avatar-frame"
                 :src="chatContact.avatarFrame"
+                :style="avatarFrameStyle(chatContact)"
                 alt=""
               />
             </span>
@@ -560,9 +561,10 @@ onUnmounted(() => {
                 <span v-else>♡</span>
               </span>
               <img
-                v-if="settings.userAvatarFrame"
+                v-if="settings.anniversaryShowAvatarFrames && settings.userAvatarFrame"
                 class="day-avatar-frame"
                 :src="settings.userAvatarFrame"
+                :style="avatarFrameStyle({ avatarFrameOffsetX: settings.userAvatarFrameOffsetX, avatarFrameOffsetY: settings.userAvatarFrameOffsetY, avatarFrameScale: settings.userAvatarFrameScale })"
                 alt=""
               />
             </span>
@@ -645,28 +647,46 @@ onUnmounted(() => {
         </span>
       </div>
       <div
+        v-if="resolvedLayout.get('wish-widget')?.page === 0"
+        class="wish-widget-home home-item"
+        :class="{ dragging: draggingId === 'wish-widget' }"
+        :style="itemStyle('wish-widget')"
+        @pointerdown="beginDrag($event, 'wish-widget')"
+      >
+        <WishWidgetCard :editing="layoutEditing" />
+      </div>
+      <div
         v-if="resolvedLayout.get('music-widget')?.page === 0"
         class="music-widget-home home-item"
         :class="{ dragging: draggingId === 'music-widget' }"
         :style="itemStyle('music-widget')"
         @pointerdown="beginDrag($event, 'music-widget')"
       >
-        <MusicWidgetCard />
+        <MusicWidgetCard :editing="layoutEditing" />
       </div>
       <div
         v-if="resolvedLayout.get('ta-today-card')?.page === 0"
         class="echoes-character-card ta-today-card home-item"
         :class="{ dragging: draggingId === 'ta-today-card' }"
         :style="[itemStyle('ta-today-card'), taTodayCardStyle]"
-        
+        
         @pointerdown="beginDrag($event, 'ta-today-card')"
       >
         <div class="ta-today-inner">
         <span class="ta-today-kicker">今天 TA 想对你说</span>
-        <div class="ta-today-list">
+        <div class="ta-today-list" :class="`count-${Math.min(taTodayCards.length, 3)}`">
           <p v-for="(card, index) in taTodayCards" :key="index">{{ card }}</p>
         </div>
         </div>
+      </div>
+      <div
+        v-if="resolvedLayout.get('photo-carousel-card')?.page === 0"
+        class="photo-carousel-home home-item"
+        :class="{ dragging: draggingId === 'photo-carousel-card' }"
+        :style="itemStyle('photo-carousel-card')"
+        @pointerdown="beginDrag($event, 'photo-carousel-card')"
+      >
+        <PhotoCarouselCard />
       </div>
 
     </div>
@@ -699,30 +719,118 @@ onUnmounted(() => {
               <span class="entry-label">{{ widget.label }}</span>
             </button>
             <div
+              v-if="resolvedLayout.get('wish-widget')?.page === 1"
+              class="wish-widget-home home-item"
+              :class="{ dragging: draggingId === 'wish-widget' }"
+              :style="itemStyle('wish-widget')"
+              @pointerdown="beginDrag($event, 'wish-widget')"
+            >
+              <WishWidgetCard :editing="layoutEditing" />
+            </div>
+            <div
               v-if="resolvedLayout.get('music-widget')?.page === 1"
               class="music-widget-home home-item"
               :class="{ dragging: draggingId === 'music-widget' }"
               :style="itemStyle('music-widget')"
               @pointerdown="beginDrag($event, 'music-widget')"
             >
-              <MusicWidgetCard />
+              <MusicWidgetCard :editing="layoutEditing" />
             </div>
             <div
               v-if="resolvedLayout.get('ta-today-card')?.page === 1"
               class="echoes-character-card ta-today-card home-item"
               :class="{ dragging: draggingId === 'ta-today-card' }"
               :style="[itemStyle('ta-today-card'), taTodayCardStyle]"
-              
+              
               @pointerdown="beginDrag($event, 'ta-today-card')"
             >
         <div class="ta-today-inner">
               <span class="ta-today-kicker">今天 TA 想对你说</span>
-              <div class="ta-today-list">
+              <div class="ta-today-list" :class="`count-${Math.min(taTodayCards.length, 3)}`">
                 <p v-for="(card, index) in taTodayCards" :key="index">{{ card }}</p>
               </div>
         </div>
             </div>
+            <div
+              v-if="resolvedLayout.get('photo-carousel-card')?.page === 1"
+              class="photo-carousel-home home-item"
+              :class="{ dragging: draggingId === 'photo-carousel-card' }"
+              :style="itemStyle('photo-carousel-card')"
+              @pointerdown="beginDrag($event, 'photo-carousel-card')"
+            >
+              <PhotoCarouselCard />
+            </div>
 
+          </div>
+        </div>
+
+        <div class="home-page" data-home-page="2" :aria-hidden="activePage !== 2" :inert="activePage !== 2">
+          <div class="bento-grid" :style="gridStyle">
+            <button
+              v-for="widget in pageThreeApps"
+              :key="widget.id"
+              :data-app-id="widget.id"
+              class="entry home-item"
+              :class="{ dragging: draggingId === widget.id }"
+              :style="itemStyle(widget.id)"
+              type="button"
+              @pointerdown="beginDrag($event, widget.id)"
+              @click="openApp(widget.id)"
+            >
+              <span class="entry-ui">
+                <img
+                  v-if="appIconSrc(settings, widget.id)"
+                  class="custom-app-icon"
+                  :src="appIconSrc(settings, widget.id)"
+                  :alt="widget.label"
+                />
+                <span v-else class="entry-tile">
+                  <LineGlyph :type="widget.glyph" />
+                </span>
+              </span>
+              <span class="entry-label">{{ widget.label }}</span>
+            </button>
+            <div
+              v-if="resolvedLayout.get('photo-carousel-card')?.page === 2"
+              class="photo-carousel-home home-item"
+              :class="{ dragging: draggingId === 'photo-carousel-card' }"
+              :style="itemStyle('photo-carousel-card')"
+              @pointerdown="beginDrag($event, 'photo-carousel-card')"
+            >
+              <PhotoCarouselCard />
+            </div>
+            <div
+              v-if="resolvedLayout.get('wish-widget')?.page === 2"
+              class="wish-widget-home home-item"
+              :class="{ dragging: draggingId === 'wish-widget' }"
+              :style="itemStyle('wish-widget')"
+              @pointerdown="beginDrag($event, 'wish-widget')"
+            >
+              <WishWidgetCard :editing="layoutEditing" />
+            </div>
+            <div
+              v-if="resolvedLayout.get('music-widget')?.page === 2"
+              class="music-widget-home home-item"
+              :class="{ dragging: draggingId === 'music-widget' }"
+              :style="itemStyle('music-widget')"
+              @pointerdown="beginDrag($event, 'music-widget')"
+            >
+              <MusicWidgetCard :editing="layoutEditing" />
+            </div>
+            <div
+              v-if="resolvedLayout.get('ta-today-card')?.page === 2"
+              class="echoes-character-card ta-today-card home-item"
+              :class="{ dragging: draggingId === 'ta-today-card' }"
+              :style="[itemStyle('ta-today-card'), taTodayCardStyle]"
+              @pointerdown="beginDrag($event, 'ta-today-card')"
+            >
+              <div class="ta-today-inner">
+                <span class="ta-today-kicker">今天 TA 想对你说</span>
+                <div class="ta-today-list" :class="`count-${Math.min(taTodayCards.length, 3)}`">
+                  <p v-for="(card, index) in taTodayCards" :key="index">{{ card }}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -731,7 +839,7 @@ onUnmounted(() => {
     <div class="home-pager">
       <div class="pager-tabs" role="tablist" aria-label="主页分页">
         <button
-          v-for="pageIndex in 2"
+          v-for="pageIndex in 3"
           :key="pageIndex"
           class="pager-dot"
           :class="{ active: activePage === pageIndex - 1 }"
@@ -757,8 +865,8 @@ onUnmounted(() => {
 <style scoped>
 .home{position:relative;width:100%;max-width:520px;height:100%;min-height:0;margin:0 auto;display:flex;flex-direction:column}
 .home-viewport{flex:1 1 auto;width:100%;min-height:0;overflow:hidden;touch-action:pan-y}
-.home-track{width:200%;height:100%;display:flex;align-items:stretch;transition:transform .38s cubic-bezier(.22,.72,.2,1);will-change:transform}.home-track.swiping{transition:none!important}
-.home-page{flex:0 0 50%;width:50%;height:100%;min-width:0;padding:8px 9px;box-sizing:border-box}
+.home-track{width:300%;height:100%;display:flex;align-items:stretch;transition:transform .38s cubic-bezier(.22,.72,.2,1);will-change:transform}.home-track.swiping{transition:none!important}
+.home-page{flex:0 0 33.333333%;width:33.333333%;height:100%;min-width:0;padding:8px 9px;box-sizing:border-box}
 .home-pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:2px 0 3px}
 .pager-tabs{display:flex;align-items:center;justify-content:center;gap:2px}
 .layout-edit-toggle{height:22px;padding:0 9px;border:1px solid var(--theme-border-soft);border-radius:999px;background:var(--theme-soft);color:var(--theme-text);font-size:10px;font-weight:700;cursor:pointer;transition:background .2s ease,color .2s ease}
@@ -770,15 +878,15 @@ onUnmounted(() => {
 .bento-grid{width:100%;height:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));gap:var(--grid-gap);justify-content:center;align-items:stretch;margin:0}
 .day-card{position:relative;grid-column:span 4;grid-row:span 2;min-width:0;padding:0;overflow:hidden;border:0!important;border-radius:28px;background:var(--theme-bg-deep)!important}
 .day-bg{position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;background-size:cover;background-position:center;background-repeat:no-repeat}
-.day-info-panel{position:absolute;right:0;bottom:0;left:0;z-index:2;height:62%;padding:clamp(26px,7vw,36px) clamp(10px,2.8vw,18px) clamp(6px,1.6vw,10px);border:0;border-radius:24px 24px 0 0;background:#fffffff0;box-shadow:inset 0 1px #ffffffe6;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:visible}
-.avatar-pair{position:absolute;top:0;left:50%;z-index:3;display:flex;align-items:center;justify-content:center;gap:clamp(9px,2.5vw,14px);transform:translate(-50%,-50%)}
-.day-avatar{position:relative;width:clamp(44px,11vw,58px);aspect-ratio:1;flex:none;display:grid;place-items:center}
+.day-info-panel{position:absolute;right:0;bottom:0;left:0;z-index:2;height:50%;min-height:68px;max-height:min(116px,52cqh);padding:clamp(12px,10cqh,22px) clamp(8px,2.4vw,14px) 0;border:0;border-radius:22px 22px 0 0;background:#fffffff0;box-shadow:inset 0 1px #ffffffe6;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:visible}
+.avatar-pair{position:absolute;top:-18px;left:50%;z-index:3;display:flex;align-items:center;justify-content:center;gap:clamp(30px,9vw,48px);transform:translate(-50%,-50%)}
+.day-avatar{position:relative;z-index:2;width:clamp(58px,14vw,74px);aspect-ratio:1;flex:none;display:grid;place-items:center}
 .day-avatar-core{width:100%;height:100%;border:3px solid rgba(255,255,255,.96);border-radius:50%;background:var(--theme-surface);display:grid;place-items:center;overflow:hidden;color:var(--theme-muted);font-size:22px;font-weight:500;box-shadow:0 6px 18px rgba(var(--theme-primary-rgb),.2),0 0 0 1px rgba(var(--theme-border-rgb),.75)}
 .day-avatar-core>img{width:100%;height:100%;object-fit:cover}
-.day-avatar-frame{position:absolute;top:50%;left:50%;z-index:2;width:112%;height:112%;max-width:none;object-fit:contain;border-radius:0;transform:translate(-50%,-50%);pointer-events:none;filter:drop-shadow(0 3px 6px rgba(var(--theme-primary-rgb),.16))}
+.day-avatar-frame{position:absolute;top:50%;left:50%;z-index:2;width:120%;height:120%;max-width:none;object-fit:contain;border-radius:0;transform:translate(-50%,-50%);pointer-events:none;filter:none}
 .day-title{position:relative;z-index:1;max-width:94%;text-align:center;font-size:clamp(10px,2.5vw,13px);font-weight:700;line-height:1.35;letter-spacing:.06em;color:var(--theme-accent)}
-.day-count{position:relative;z-index:1;margin-top:3px;display:flex;align-items:baseline;justify-content:center;gap:5px;color:var(--theme-primary)}
-.day-count strong{font-size:clamp(28px,7.5vw,46px);font-weight:300;line-height:.95;letter-spacing:-.02em}
+.day-count{position:relative;z-index:1;margin-top:2px;display:flex;align-items:baseline;justify-content:center;gap:5px;color:var(--theme-primary)}
+.day-count strong{font-size:clamp(22px,5.8vw,34px);font-weight:300;line-height:.95;letter-spacing:-.02em}
 .day-count span{font-size:clamp(9px,2.2vw,11px);font-weight:700;color:var(--app-icon-color)}
 .entry{position:relative;width:100%;height:100%;min-width:0;min-height:0;padding:0;border:0;background:none;box-shadow:none;filter:none;display:grid;place-items:center;cursor:pointer;container-type:size}
 .entry-ui{width:min(92cqw,92cqh);height:min(92cqw,92cqh);overflow:hidden;border:1px solid var(--theme-border-soft);border-radius:20px;background:#fff;box-shadow:none;filter:none;display:grid;place-items:center;position:relative;transition:transform .16s ease,background .16s ease}
@@ -789,7 +897,9 @@ onUnmounted(() => {
 .layout-editing .home-item::after{content:"";position:absolute;inset:2px;z-index:20;border:1px dashed rgba(var(--theme-primary-rgb),.45);border-radius:inherit;pointer-events:none}
 .layout-editing .entry::after{border-radius:20px}
 .music-widget-home{min-width:0;min-height:0;overflow:hidden;border-radius:20px}
+.wish-widget-home{min-width:0;min-height:0;overflow:hidden;border-radius:20px}
 .home-item.dragging{opacity:.82;cursor:grabbing;filter:none;box-shadow:0 12px 28px rgba(var(--theme-overlay-rgb),.16);will-change:transform}
+.music-widget-home.dragging{box-shadow:none!important;filter:none!important}
 :global(body.home-dragging) .home-track{transition:none!important}
 .custom-app-icon{width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}
 .entry-tile{width:34px;height:34px;display:grid;place-items:center;color:var(--app-icon-color)}
@@ -800,26 +910,40 @@ onUnmounted(() => {
 .time-card{padding:8px 10px;display:flex;align-items:center}
 .link-card{padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .ta-today-card{grid-column:span 2;grid-row:span 2;min-width:0;width:100%;overflow:hidden;border-radius:20px;padding:0;display:block;container-type:size;container-name:ta-today}
-.ta-today-inner{box-sizing:border-box;width:100%;height:100%;padding:clamp(5px,min(4cqw,7cqh),14px) clamp(6px,min(5cqw,7cqh),16px);display:flex;flex-direction:column;justify-content:center;gap:clamp(2px,min(2cqw,3.5cqh),7px);overflow:hidden}
-.ta-today-kicker{flex:none;min-width:0;max-width:100%;overflow:hidden;font-size:clamp(7px,min(5cqw,9cqh),13px);font-weight:700;line-height:1.2;letter-spacing:.08em;color:var(--home-card-text,var(--theme-muted));white-space:nowrap;text-overflow:ellipsis}
-.ta-today-list{display:flex;flex-direction:column;justify-content:center;flex:1 1 auto;min-height:0;overflow:hidden;gap:clamp(2px,min(2.8cqw,3cqh),7px)}
-.ta-today-list p{margin:0;flex:0 1 auto;min-height:0;max-width:100%;overflow:hidden;color:var(--home-card-text,var(--theme-text));font-size:clamp(8px,min(5.5cqw,10cqh),18px);line-height:1.35;overflow-wrap:anywhere;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.photo-carousel-home{min-width:0;width:100%;height:100%;border-radius:22px;overflow:hidden}
+.ta-today-inner{box-sizing:border-box;width:100%;height:100%;padding:clamp(6px,min(5cqw,8cqh),16px) clamp(7px,min(5.5cqw,8cqh),18px);display:flex;flex-direction:column;justify-content:center;gap:clamp(3px,min(2.5cqw,4cqh),8px);overflow:hidden}
+.ta-today-kicker{flex:none;min-width:0;max-width:100%;overflow:hidden;font-size:clamp(9px,min(6cqw,10cqh),15px);font-weight:700;line-height:1.2;letter-spacing:.07em;color:var(--home-card-text,var(--theme-muted));white-space:nowrap;text-overflow:ellipsis}
+.ta-today-list{display:flex;flex-direction:column;justify-content:center;flex:1 1 auto;min-height:0;overflow:hidden;gap:4px}
+.ta-today-list p{margin:0;flex:0 1 auto;min-height:0;max-width:100%;overflow:hidden;color:var(--home-card-text,var(--theme-text));font-size:clamp(11px,min(7.6cqw,14cqh),21px);line-height:1.32;overflow-wrap:anywhere;word-break:break-word;white-space:normal;text-wrap:pretty;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--ta-lines,3)}
+.ta-today-list.count-1 p{font-size:clamp(14px,min(9.2cqw,17cqh),25px);--ta-lines:4}
+.ta-today-list.count-2 p{font-size:clamp(11px,min(7.2cqw,13cqh),20px);--ta-lines:3}
+.ta-today-list.count-3 p{font-size:clamp(10px,min(6.2cqw,11cqh),18px);--ta-lines:2}
 @container ta-today (max-height:120px){
 .ta-today-kicker{letter-spacing:.02em}
-.ta-today-list{gap:1px}
-.ta-today-list p{line-height:1.25;-webkit-line-clamp:1}
+.ta-today-list{gap:3px}
+.ta-today-list p{line-height:1.28}
+.ta-today-list.count-1 p{--ta-lines:2}
+.ta-today-list.count-2 p{--ta-lines:2}
+.ta-today-list.count-3 p{--ta-lines:2}
 }
 @container ta-today (min-height:210px){
-.ta-today-list p{-webkit-line-clamp:2}
+.ta-today-list{gap:5px}
+.ta-today-list p{line-height:1.45}
+.ta-today-list.count-1 p{--ta-lines:6}
+.ta-today-list.count-2 p{--ta-lines:4}
+.ta-today-list.count-3 p{--ta-lines:3}
 }
 @container ta-today (min-height:340px){
-.ta-today-list p{-webkit-line-clamp:3}
+.ta-today-list{gap:7px}
+.ta-today-list p{line-height:1.55}
+.ta-today-list.count-1 p{--ta-lines:9}
+.ta-today-list.count-2 p{--ta-lines:6}
+.ta-today-list.count-3 p{--ta-lines:5}
 }
 @container ta-today (max-width:130px){
 .ta-today-kicker{letter-spacing:0}
-.ta-today-list p{line-height:1.3}
-}
-.ts-top{width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
+
+}.ts-top{width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
 .ts-cell{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;text-align:center}
 .ts-kicker{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--app-icon-color)}
 .ts-value{font-size:clamp(17px,5vw,23px);font-weight:300;letter-spacing:.02em;color:var(--theme-primary);line-height:1.1}
@@ -855,11 +979,11 @@ onUnmounted(() => {
 .day-card,.time-card,.link-card,.ta-today-card{border:0!important;box-shadow:none!important;filter:none!important;container-type:size}
 .day-card{background:var(--home-card-color,var(--theme-bg-deep))!important}
 .time-card,.link-card,.ta-today-card{background:var(--home-card-color,#fff)!important}
-.day-info-panel{height:66%;padding:clamp(18px,14cqh,42px) clamp(8px,4cqw,20px) clamp(5px,4cqh,12px);justify-content:center}
-.avatar-pair{gap:clamp(5px,min(4cqw,8cqh),14px)}
-.day-avatar{width:clamp(30px,min(14cqw,26cqh),64px)}
+.day-info-panel{height:50%;min-height:0;max-height:min(116px,52cqh);padding:clamp(12px,10cqh,22px) clamp(8px,4cqw,20px) 0;justify-content:center}
+.avatar-pair{gap:clamp(24px,min(10cqw,20cqh),44px)}
+.day-avatar{width:clamp(48px,min(24cqw,46cqh),76px)}
 .day-title{font-size:clamp(9px,min(3.6cqw,6cqh),15px)}
-.day-count strong{font-size:clamp(20px,min(15cqw,22cqh),52px)}
+.day-count strong{font-size:clamp(20px,min(11cqw,24cqh),34px)}
 .time-card .ts-kicker,.link-card .ts-kicker{color:var(--home-card-text,var(--theme-muted))}
 .time-card .ts-value{color:var(--home-card-text,var(--theme-primary));font-size:clamp(14px,min(10cqw,23cqh),27px)}
 .link-card .ts-status{color:var(--home-card-text,var(--theme-text-strong))}

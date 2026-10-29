@@ -1,0 +1,73 @@
+/* 莫比乌斯环 1 / 2：按原始文档恢复漂浮、粒子、环线与中心排版。 */
+.mobius-stage { perspective: 1200px; }
+.mobius-shell { position:relative; width:min(100%,650px); aspect-ratio:16/9; transform-style:preserve-3d; animation:mobius-float-container 8s ease-in-out infinite alternate; }
+@keyframes mobius-float-container { 0%{transform:translateY(-5px) rotateX(2deg) rotateY(-2deg)} 100%{transform:translateY(5px) rotateX(-2deg) rotateY(2deg)} }
+.mobius-particle-layer { position:absolute; inset:-20%; z-index:0; pointer-events:none; transform-style:preserve-3d; }
+.mobius-particle { position:absolute; width:2px; height:2px; border-radius:50%; background:#fff; opacity:0; }
+.mobius-particle-1 { top:20%; left:30%; box-shadow:0 0 4px 2px rgba(180,40,60,.6); animation:mobius-drift 12s linear infinite; }
+.mobius-particle-2 { top:60%; left:70%; box-shadow:0 0 4px 2px rgba(80,60,120,.6); animation:mobius-drift 15s linear infinite 2s; }
+.mobius-particle-3 { top:80%; left:20%; box-shadow:0 0 4px 1px rgba(255,255,255,.4); animation:mobius-drift 10s linear infinite 4s; }
+.mobius-particle-4 { top:30%; left:80%; box-shadow:0 0 6px 2px rgba(180,40,60,.8); animation:mobius-drift 18s linear infinite 1s; }
+.mobius-particle-5 { top:50%; left:50%; box-shadow:0 0 5px 2px rgba(80,60,120,.7); animation:mobius-drift 14s linear infinite 5s; }
+@keyframes mobius-drift { 0%{transform:translate3d(0,0,-50px) rotate(0);opacity:0} 20%,80%{opacity:.8} 100%{transform:translate3d(40px,-60px,100px) rotate(360deg);opacity:0} }
+.mobius-star { position:absolute; width:24px; height:24px; z-index:1; pointer-events:none; filter:drop-shadow(0 0 8px rgba(255,255,255,.4)); animation:mobius-star-pulse 4s ease-in-out infinite alternate; }
+.mobius-star-top { top:10%; left:15%; animation-delay:0s; }
+.mobius-star-bottom { right:10%; bottom:15%; animation-delay:2s; }
+@keyframes mobius-star-pulse { 0%{transform:scale(.8) rotate(0);opacity:.3;filter:drop-shadow(0 0 4px rgba(200,50,70,.3))} 100%{transform:scale(1.1) rotate(45deg);opacity:.9;filter:drop-shadow(0 0 12px rgba(100,80,140,.8))} }
+.mobius-decorative-line { position:absolute; left:50%; width:1px; height:40px; z-index:1; transform:translateX(-50%); background:linear-gradient(180deg,transparent,rgba(211,47,47,.6),transparent); }
+.mobius-line-top { top:0; }
+.mobius-line-bottom { bottom:0; background:linear-gradient(180deg,transparent,rgba(126,87,194,.6),transparent); }
+.mobius-copy { position:absolute; top:50%; left:50%; z-index:3; width:80%; display:flex; flex-direction:column; align-items:center; gap:1rem; transform:translate(-50%,-50%); text-align:center; pointer-events:none; }
+.mobius-copy h2 { margin:0; color:#fff; font-family:'Cinzel','Songti SC',serif; font-size:clamp(1.2rem,3.5vw,2.2rem); font-weight:700; line-height:1.35; letter-spacing:.15em; text-transform:uppercase; white-space:pre-line; text-shadow:0 4px 12px rgba(0,0,0,.8),0 0 25px rgba(211,47,47,.6),-2px -2px 0 rgba(126,87,194,.4); mix-blend-mode:screen; }
+.mobius-copy p { position:relative; margin:0; padding:0 1rem; color:rgba(255,255,255,.75); font-family:'Noto Serif SC','Playfair Display',serif; font-size:clamp(.75rem,2vw,.9rem); font-weight:500; line-height:1.8; letter-spacing:.05em; white-space:pre-line; text-shadow:0 2px 4px rgba(0,0,0,.8); }
+.mobius-copy p::before,.mobius-copy p::after { content:''; display:block; width:30px; height:1px; margin:.75rem auto; background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent); }
+.mobius-two .mobius-copy { width:85%; gap:1.25rem; }
+.mobius-two .mobius-copy h2 { font-family:'Noto Serif SC','Songti SC',serif; font-size:clamp(1rem,2.5vw,1.8rem); font-weight:600; line-height:1.6; letter-spacing:.15em; text-transform:none; }
+.mobius-two .mobius-copy p { padding:0 1.5rem; color:rgba(255,255,255,.65); font-weight:300; letter-spacing:.2em; }
+.mobius-two .mobius-copy p::before { position:absolute; top:-15px; left:50%; width:40px; margin:0; transform:translateX(-50%); background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent); }
+.mobius-two .mobius-copy p::after { display:none; }
+.mobius-svg { position:absolute; inset:0; z-index:2; width:100%; height:100%; filter:drop-shadow(0 15px 25px rgba(0,0,0,.4)); }
+.mobius-path-love { fill:#d32f2f; font-family:'Cinzel',serif; font-size:22px; font-weight:700; letter-spacing:4px; text-transform:uppercase; filter:drop-shadow(0 0 8px rgba(211,47,47,.7)); }
+.mobius-path-hate { fill:#7e57c2; font-family:'Playfair Display',serif; font-size:20px; font-style:italic; font-weight:600; letter-spacing:3px; filter:drop-shadow(0 0 10px rgba(126,87,194,.8)); }
+.mobius-path-shadow { fill:transparent; stroke:rgba(255,255,255,.1); stroke-width:.5px; font-family:'Cinzel',serif; font-size:22px; font-weight:700; letter-spacing:4px; filter:blur(2px); }
+@media (max-width:600px) { .mobius-path-love,.mobius-path-shadow{font-size:16px;letter-spacing:2px} .mobius-path-hate{font-size:14px;letter-spacing:2px} .mobius-two .mobius-copy h2{letter-spacing:.1em} .mobius-stage{padding:max(18px,env(safe-area-inset-top)) 12px max(18px,env(safe-area-inset-bottom))} }
+/* 浪漫春日 1 / 2：按原始文档恢复斜线、樱花、角框和逐字入场。 */
+.spring-stage { position:relative; width:100%; height:100%; padding:50px 20px; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; color:var(--spring-text); font-family:'SimSun','Songti SC',serif; background:#080b11; }
+.spring-background { position:absolute; inset:0; z-index:0; background-size:cover; background-position:center; background-repeat:no-repeat; opacity:.28; pointer-events:none; -webkit-mask-image:radial-gradient(ellipse at center,rgba(0,0,0,1) 15%,rgba(0,0,0,0) 75%); mask-image:radial-gradient(ellipse at center,rgba(0,0,0,1) 15%,rgba(0,0,0,0) 75%); }
+.spring-two .spring-background { opacity:.06; -webkit-mask-image:none; mask-image:none; }
+.spring-fine-corners { display:none; position:absolute; inset:30px; z-index:1; pointer-events:none; }
+.spring-two .spring-fine-corners { display:block; }
+.spring-fine-corners::before,.spring-fine-corners::after { content:''; position:absolute; width:60px; height:60px; border:1px solid var(--spring-accent); opacity:.8; }
+.spring-fine-corners::before { top:0; left:0; border-right:0; border-bottom:0; }
+.spring-fine-corners::after { right:0; bottom:0; border-top:0; border-left:0; }
+.spring-folded-lines { position:absolute; top:50%; left:50%; z-index:1; width:70%; height:50%; transform:translate(-50%,-50%) skewX(-15deg); border-top:1px solid rgba(255,255,255,.2); border-right:1px dashed rgba(255,255,255,.2); border-bottom:1px solid var(--spring-accent); border-left:1px dashed rgba(255,255,255,.2); pointer-events:none; }
+.spring-folded-lines::after { content:''; position:absolute; top:15px; left:-15px; right:15px; bottom:-15px; border:1px solid rgba(255,255,255,.1); }
+.spring-petal { position:absolute; top:0; z-index:2; width:10px; height:12px; border-radius:12px 1px 12px 1px; background:var(--spring-accent); opacity:0; pointer-events:none; animation:spring-sakura-fall 6s linear infinite; }
+@keyframes spring-sakura-fall { 0%{transform:translate(0,-50px) rotate(0);opacity:0} 20%,80%{opacity:.7} 100%{transform:translate(100px,400px) rotate(360deg);opacity:0} }
+.spring-copy { position:relative; z-index:3; display:flex; flex-direction:column; align-items:center; gap:35px; width:100%; }
+.spring-english { max-width:100%; color:var(--spring-accent); font-size:1.4rem; letter-spacing:2px; line-height:1.5; text-align:center; text-shadow:0 0 5px color-mix(in srgb,var(--spring-accent) 50%,transparent); opacity:0; animation:spring-english-in 1.2s ease .2s forwards; }
+.spring-chinese { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; width:100%; }
+.spring-char { position:relative; display:inline-block; margin:0 7px; color:var(--spring-text); font-size:1.8rem; line-height:1.25; text-shadow:0 0 4px rgba(255,255,255,.5); opacity:0; transform:translateY(30px); animation:spring-char-in 1s ease var(--spring-delay,.3s) forwards; -webkit-mask-image:linear-gradient(to bottom,black 65%,transparent 100%); mask-image:linear-gradient(to bottom,black 65%,transparent 100%); }
+.spring-char.highlight { color:var(--spring-accent); font-size:2.8rem; -webkit-mask-image:none; mask-image:none; }
+.spring-char.art-frame { padding:4px; }
+.spring-char.art-frame::before,.spring-char.art-frame::after { content:''; position:absolute; width:10px; height:10px; border-color:var(--spring-accent); }
+.spring-char.art-frame::before { top:0; left:0; border-top:1px solid var(--spring-accent); border-left:1px solid var(--spring-accent); }
+.spring-char.art-frame::after { right:0; bottom:0; border-right:1px solid var(--spring-accent); border-bottom:1px solid var(--spring-accent); }
+.spring-char.up { margin-top:-20px; }
+.spring-char.down { margin-top:20px; }
+.spring-char.hollow { color:transparent; -webkit-text-stroke:1px rgba(255,255,255,.9); text-shadow:none; }
+.spring-char.blur { filter:blur(1.5px); }
+.spring-char.gradient { color:transparent; background:linear-gradient(to bottom,#fff,var(--spring-accent)); -webkit-background-clip:text; background-clip:text; }
+@keyframes spring-english-in { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+@keyframes spring-char-in { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+@media (max-width:600px) {
+  .spring-stage { padding:max(18px,env(safe-area-inset-top)) 12px max(18px,env(safe-area-inset-bottom)); }
+  .spring-fine-corners { inset:18px; }
+  .spring-fine-corners::before,.spring-fine-corners::after { width:42px; height:42px; }
+  .spring-copy { gap:20px; }
+  .spring-char { margin:0 3px; font-size:1.3rem; }
+  .spring-char.highlight { font-size:2rem; }
+  .spring-char.up { margin-top:-12px; }
+  .spring-char.down { margin-top:12px; }
+  .spring-english { font-size:1.1rem; letter-spacing:1px; }
+}

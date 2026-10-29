@@ -4,6 +4,14 @@ import { contactById, contactDisplayName, updateContact } from '../chat'
 import { settings } from '../settings'
 import { store, go } from '../store'
 import systemCardsData from '../data/system-cards.json'
+import { SYSTEM_GIFT_GROUPS } from '../gift-data'
+import {
+  isSystemCardGroupDeleted,
+  isSystemCardGroupLocked,
+  systemCategoryHasVisibleGroups,
+  systemCategoryRows,
+  systemCardGroupRows,
+} from '../system-card-pool'
 
 const SYSTEM_PAGE_SIZE = 120
 const contact = computed(() => contactById(store.cardLibraryContactId))
@@ -25,12 +33,31 @@ const libraryTab = ref('custom')
 const composerOpen = ref(false)
 const newGroupOpen = ref(false)
 
-const systemCategories = systemCardsData.categories || []
-const systemMeta = systemCardsData.meta || {}
-const systemCategoryKey = ref(systemCategories[0]?.key || '')
+const giftSystemCategory = {
+  key: 'gift',
+  label: '礼物',
+  usage: '礼物名称与礼物备注',
+  cardCount: SYSTEM_GIFT_GROUPS.reduce((sum, group) => sum + (group.cards?.length || 0), 0),
+  groups: SYSTEM_GIFT_GROUPS.map((group) => ({ name: group.name, cards: [...group.cards] })),
+}
+const allSystemCategories = [...(systemCardsData.categories || []), giftSystemCategory]
+const visibleSystemCategories = computed(() => allSystemCategories.filter(systemCategoryHasVisibleGroups))
+const systemCategoryOptions = computed(() => visibleSystemCategories.value.map((category) => ({
+  ...category,
+  visibleCount: systemCategoryRows(category, { respectLocked: false }).length,
+})))
+const systemCategoryKey = ref(allSystemCategories[0]?.key || '')
 const systemGroupKey = ref('all')
 const systemSearch = ref('')
 const systemVisibleLimit = ref(SYSTEM_PAGE_SIZE)
+const SYSTEM_LOCK_PAGE_SIZE = 8
+const systemLockDialogOpen = ref(false)
+const systemLockPage = ref(0)
+const systemLockDraftKeys = ref([])
+const systemComposerOpen = ref(false)
+const systemCustomText = ref('')
+const editingSystemCardId = ref('')
+const editingSystemCardText = ref('')
 
 let longPressTimer = null
 let longPressStartY = 0
@@ -66,36 +93,35 @@ const customSections = computed(() => {
 })
 
 const systemCategory = computed(
-  () => systemCategories.find((category) => category.key === systemCategoryKey.value) || systemCategories[0] || null
+  () => visibleSystemCategories.value.find((category) => category.key === systemCategoryKey.value) || visibleSystemCategories.value[0] || null
 )
 function flattenSystemCategory(category) {
-  if (!category) return []
-  return category.groups.flatMap((group, groupIndex) =>
-    group.cards.map((text, cardIndex) => ({
-      id: `${category.key}-${groupIndex}-${cardIndex}`,
-      text,
-      groupKey: String(groupIndex),
-      groupName: group.name,
-      categoryKey: category.key,
-      categoryLabel: category.label,
-    }))
-  )
+  return systemCategoryRows(category, { respectLocked: false })
 }
-const systemCategoryRows = computed(() => flattenSystemCategory(systemCategory.value))
-const allSystemRows = computed(() => systemCategories.flatMap(flattenSystemCategory))
+const currentSystemCategoryRows = computed(() => flattenSystemCategory(systemCategory.value))
+const allSystemRows = computed(() => visibleSystemCategories.value.flatMap(flattenSystemCategory))
 const systemGroupOptions = computed(() => {
   const category = systemCategory.value
   if (!category) return [{ key: 'all', name: '全部分组', count: 0 }]
   return [
-    { key: 'all', name: '全部分组', count: category.groups.reduce((sum, group) => sum + group.cards.length, 0) },
-    ...category.groups.map((group, index) => ({ key: String(index), name: group.name, count: group.cards.length })),
+    {
+      key: 'all',
+      name: '全部分组',
+      count: category.groups.reduce(
+        (sum, _, index) => sum + systemCardGroupRows(category, index, { respectLocked: false }).length,
+        0
+      ),
+    },
+    ...category.groups.flatMap((group, index) => isSystemCardGroupDeleted(category, index)
+      ? []
+      : [{ key: String(index), name: group.name, count: systemCardGroupRows(category, index, { respectLocked: false }).length }]),
   ]
 })
 const systemFilteredRows = computed(() => {
   const query = systemSearch.value.trim().toLowerCase()
   if (query) return allSystemRows.value.filter((row) => row.text.toLowerCase().includes(query))
-  if (systemGroupKey.value === 'all') return systemCategoryRows.value
-  return systemCategoryRows.value.filter((row) => row.groupKey === systemGroupKey.value)
+  if (systemGroupKey.value === 'all') return currentSystemCategoryRows.value
+  return currentSystemCategoryRows.value.filter((row) => row.groupKey === systemGroupKey.value)
 })
 const systemDisplayRows = computed(() => systemFilteredRows.value.slice(0, systemVisibleLimit.value))
 const systemSections = computed(() => {
@@ -130,7 +156,42 @@ const selectedSystemGroup = computed(() => {
   return systemCategory.value?.groups?.[index] || null
 })
 const selectedSystemGroupIndex = computed(() => Number(systemGroupKey.value))
-const canLockSystemGroup = computed(() => systemCategory.value?.key === 'main')
+const canLockSystemGroup = computed(() => Boolean(systemCategory.value?.groups?.length))
+const systemCategoryLocked = computed(() => {
+  const category = systemCategory.value
+  if (!category) return false
+  const indexes = category.groups
+    .map((_, index) => index)
+    .filter((index) => !isSystemCardGroupDeleted(category, index))
+  return indexes.length > 0 && indexes.every((index) => isSystemGroupLocked(index))
+})
+const systemLockGroups = computed(() => {
+  const category = systemCategory.value
+  if (!category) return []
+  return category.groups.flatMap((group, index) => isSystemCardGroupDeleted(category, index)
+    ? []
+    : [{
+        key: `${category.key}:${index}`,
+        name: group.name || `分组 ${index + 1}`,
+        count: systemCardGroupRows(category, index, { respectLocked: false }).length,
+      }])
+})
+const systemLockPageCount = computed(() => Math.max(1, Math.ceil(systemLockGroups.value.length / SYSTEM_LOCK_PAGE_SIZE)))
+const systemLockPageGroups = computed(() => {
+  const start = systemLockPage.value * SYSTEM_LOCK_PAGE_SIZE
+  return systemLockGroups.value.slice(start, start + SYSTEM_LOCK_PAGE_SIZE)
+})
+const systemLockSelectedCount = computed(() => systemLockDraftKeys.value.length)
+const effectiveSystemCardCount = computed(() => allSystemCategories.reduce(
+  (sum, category) => sum + systemCategoryRows(category, { respectLocked: false }).length,
+  0
+))
+const hasDeletedSystemCards = computed(
+  () => Boolean((settings.systemHiddenCardIds || []).length || (settings.systemDeletedCardGroups || []).length)
+)
+const selectedSystemGroupIndexes = computed(() => systemLockDraftKeys.value
+  .map((key) => Number(String(key).split(':').pop()))
+  .filter((index) => Number.isInteger(index) && index >= 0))
 
 function systemGroupLockKey(index) {
   const categoryKey = systemCategory.value?.key
@@ -138,8 +199,8 @@ function systemGroupLockKey(index) {
   return `${categoryKey}:${index}`
 }
 function isSystemGroupLocked(index) {
-  const key = systemGroupLockKey(index)
-  return Boolean(key) && (settings.systemLockedCardGroups || []).includes(key)
+  const category = systemCategory.value
+  return Boolean(category) && isSystemCardGroupLocked(category.key, index)
 }
 function toggleSystemGroupLock(index) {
   const key = systemGroupLockKey(index)
@@ -156,6 +217,136 @@ function toggleSystemGroupLock(index) {
     status.value = '已锁定该预设分组，TA 抽卡时不会用到这里'
   }
   settings.systemLockedCardGroups = list
+}
+function openSystemLockDialog() {
+  const category = systemCategory.value
+  if (!category) return
+  const prefix = `${category.key}:`
+  systemLockDraftKeys.value = (settings.systemLockedCardGroups || []).filter((key) => key.startsWith(prefix))
+  systemLockPage.value = 0
+  systemLockDialogOpen.value = true
+}
+function closeSystemLockDialog() {
+  systemLockDialogOpen.value = false
+  systemLockDraftKeys.value = []
+  systemLockPage.value = 0
+}
+function toggleSystemLockDraft(key) {
+  systemLockDraftKeys.value = systemLockDraftKeys.value.includes(key)
+    ? systemLockDraftKeys.value.filter((item) => item !== key)
+    : [...systemLockDraftKeys.value, key]
+}
+function toggleSystemLockPage() {
+  const pageKeys = systemLockPageGroups.value.map((group) => group.key)
+  const allSelected = pageKeys.every((key) => systemLockDraftKeys.value.includes(key))
+  const next = new Set(systemLockDraftKeys.value)
+  pageKeys.forEach((key) => allSelected ? next.delete(key) : next.add(key))
+  systemLockDraftKeys.value = [...next]
+}
+function selectAllSystemLockGroups() {
+  const allKeys = systemLockGroups.value.map((group) => group.key)
+  const allSelected = allKeys.every((key) => systemLockDraftKeys.value.includes(key))
+  systemLockDraftKeys.value = allSelected ? [] : allKeys
+}
+function clearSystemLockSelection() {
+  systemLockDraftKeys.value = []
+}
+function applySystemLockSelection() {
+  const category = systemCategory.value
+  if (!category) return
+  const prefix = `${category.key}:`
+  const current = (settings.systemLockedCardGroups || []).filter((key) => !key.startsWith(prefix))
+  settings.systemLockedCardGroups = [...new Set([...current, ...systemLockDraftKeys.value])]
+  const count = systemLockSelectedCount.value
+  status.value = count
+    ? `已禁用「${category.label}」中的 ${count} 个分组，TA 将不再抽取这些字卡`
+    : `已启用「${category.label}」中的全部分组`
+  closeSystemLockDialog()
+}
+function deleteSystemLockSelection() {
+  const category = systemCategory.value
+  if (!category) return
+  const indexes = selectedSystemGroupIndexes.value
+  if (!indexes.length) {
+    status.value = '请先勾选要删除的小分组'
+    return
+  }
+  const groupNames = indexes.map((index) => category.groups[index]?.name).filter(Boolean)
+  const defaultIds = indexes.flatMap((index) =>
+    (category.groups[index]?.cards || []).map((_, cardIndex) => `${category.key}:${index}:${cardIndex}`)
+  )
+  const customIds = (settings.systemCustomCards || [])
+    .filter((card) => card.categoryKey === category.key && indexes.includes(Number(card.groupIndex)))
+    .map((card) => card.id)
+  const total = defaultIds.length + customIds.length
+  const message = `删除「${category.label}」中已选的 ${indexes.length} 个分组（${groupNames.join('、')}）？\n\n共 ${total} 张字卡会从字卡库移除。之后可在系统字卡工具栏点“恢复删除”找回。`
+  if (!window.confirm(message)) return
+  const hidden = new Set(settings.systemHiddenCardIds || [])
+  ;[...defaultIds, ...customIds].forEach((id) => hidden.add(id))
+  settings.systemHiddenCardIds = [...hidden]
+  const edits = { ...(settings.systemCardEdits || {}) }
+  defaultIds.forEach((id) => delete edits[id])
+  settings.systemCardEdits = edits
+  const deletedKeys = new Set(systemLockDraftKeys.value)
+  settings.systemDeletedCardGroups = [...new Set([...(settings.systemDeletedCardGroups || []), ...deletedKeys])]
+  settings.systemLockedCardGroups = (settings.systemLockedCardGroups || []).filter((key) => !deletedKeys.has(key))
+  status.value = `已删除「${category.label}」中的 ${indexes.length} 个分组，共 ${total} 张字卡`
+  closeSystemLockDialog()
+}
+
+function startEditSystemCard(card) {
+  editingSystemCardId.value = card.id
+  editingSystemCardText.value = card.text
+}
+function cancelEditSystemCard() {
+  editingSystemCardId.value = ''
+  editingSystemCardText.value = ''
+}
+function saveSystemCard(card) {
+  const text = editingSystemCardText.value.trim()
+  if (!text) return
+  if (card.custom) {
+    const target = (settings.systemCustomCards || []).find((item) => item.id === card.id)
+    if (target) target.text = text
+  } else {
+    settings.systemCardEdits = {
+      ...(settings.systemCardEdits || {}),
+      [card.id]: text,
+    }
+  }
+  status.value = '系统字卡已修改，保存设置后立即生效'
+  cancelEditSystemCard()
+}
+function deleteSystemCard(card) {
+  if (!window.confirm(`删除系统字卡「${card.text}」？`)) return
+  if (card.custom) {
+    settings.systemCustomCards = (settings.systemCustomCards || []).filter((item) => item.id !== card.id)
+  } else {
+    settings.systemHiddenCardIds = [...new Set([...(settings.systemHiddenCardIds || []), card.id])]
+  }
+  status.value = '已删除系统字卡，可随时在系统预设中恢复'
+}
+function restoreSystemCards() {
+  settings.systemHiddenCardIds = []
+  settings.systemDeletedCardGroups = []
+  status.value = '已恢复所有被删除的系统字卡和分组'
+}
+function addSystemCard() {
+  const text = systemCustomText.value.trim()
+  if (!text) return
+  const groupIndex = Number(systemGroupKey.value)
+  settings.systemCustomCards = [
+    ...(settings.systemCustomCards || []),
+    {
+      id: makeId('sys-custom'),
+      categoryKey: systemCategory.value?.key || 'main',
+      groupIndex: Number.isInteger(groupIndex) && groupIndex >= 0 ? groupIndex : 0,
+      text,
+    },
+  ]
+  systemCustomText.value = ''
+  systemComposerOpen.value = false
+  status.value = '已添加自定义系统字卡'
 }
 function toggleCustomGroupLock(group) {
   if (!group) return
@@ -196,6 +387,14 @@ watch(
 )
 watch([systemCategoryKey, systemGroupKey, systemSearch], () => {
   systemVisibleLimit.value = SYSTEM_PAGE_SIZE
+})
+watch(visibleSystemCategories, (categories) => {
+  if (!categories.some((category) => category.key === systemCategoryKey.value)) {
+    systemCategoryKey.value = categories[0]?.key || ''
+  }
+}, { immediate: true })
+watch(systemGroupOptions, (options) => {
+  if (!options.some((group) => group.key === systemGroupKey.value)) systemGroupKey.value = 'all'
 })
 
 function groupInitial(name) {
@@ -425,7 +624,7 @@ function save() {
           <span>我的字卡</span><small>{{ cards.length }}</small>
         </button>
         <button type="button" class="library-tab" :class="{ active: libraryTab === 'preset' }" role="tab" :aria-selected="libraryTab === 'preset'" @click="libraryTab = 'preset'">
-          <span>系统预设</span><small>{{ systemMeta.cardCount || 0 }}</small>
+          <span>系统预设</span><small>{{ effectiveSystemCardCount }}</small>
         </button>
       </div>
     </header>
@@ -533,8 +732,8 @@ function save() {
 
     <template v-else>
       <div class="system-category-strip" role="tablist" aria-label="系统预设分类">
-        <button v-for="category in systemCategories" :key="category.key" type="button" class="system-category" :class="{ active: systemCategory?.key === category.key }" @click="selectSystemCategory(category)">
-          <span>{{ category.label }}</span><small>{{ category.cardCount }}</small>
+        <button v-for="category in systemCategoryOptions" :key="category.key" type="button" class="system-category" :class="{ active: systemCategory?.key === category.key }" @click="selectSystemCategory(category)">
+          <span>{{ category.label }}</span><small>{{ category.visibleCount }}</small>
         </button>
       </div>
       <div class="library-toolbar system-toolbar">
@@ -542,6 +741,17 @@ function save() {
           <span class="search-glyph" aria-hidden="true">⌕</span>
           <input v-model="systemSearch" type="search" placeholder="搜索全部系统预设字卡" />
         </label>
+        <button class="toolbar-button" type="button" @click="openSystemLockDialog">
+          {{ systemCategoryLocked ? '管理禁用分组' : '禁用本分类' }}
+        </button>
+        <button class="toolbar-button" type="button" @click="systemComposerOpen = !systemComposerOpen">
+          {{ systemComposerOpen ? '收起' : '＋ 自定义' }}
+        </button>
+        <button v-if="hasDeletedSystemCards" class="toolbar-button" type="button" @click="restoreSystemCards">恢复删除</button>
+      </div>
+      <div v-if="systemComposerOpen" class="card-composer system-composer">
+        <textarea v-model="systemCustomText" rows="2" maxlength="200" placeholder="输入要加入当前系统预设分组的自定义字卡"></textarea>
+        <div class="add-actions"><button type="button" @click="addSystemCard">添加到当前分类</button></div>
       </div>
       <div class="group-strip system" role="tablist" aria-label="系统预设分组">
         <button v-for="group in systemGroupOptions" :key="group.key" type="button" class="group-chip" :class="{ active: systemGroupKey === group.key, locked: group.key !== 'all' && isSystemGroupLocked(Number(group.key)) }" :title="group.name" @click="systemGroupKey = group.key">
@@ -561,7 +771,7 @@ function save() {
         >
           {{ isSystemGroupLocked(selectedSystemGroupIndex) ? '解锁' : '锁定' }}
         </button>
-        <span v-else class="ga-note">该分类仅用于拼字 / 补充语料，不参与抽卡</span>
+        <span v-else class="ga-note">{{ systemCategory?.key === 'gift' ? '该分类用于礼物名称与礼物备注，不参与聊天字卡抽卡' : '该分类仅用于拼字 / 补充语料，不参与抽卡' }}</span>
       </div>
       <div class="library-summary system-summary">
         <span>{{ systemSearch ? '全部系统预设' : systemCategory?.label }}</span>
@@ -579,11 +789,22 @@ function save() {
                 <span class="ccg-count">{{ section.cards.length }}</span>
                 <span class="ccg-rule"></span>
               </header>
-              <article v-for="card in section.cards" :key="card.id" class="cc-item readonly">
+              <article v-for="card in section.cards" :key="card.id" class="cc-item system-card-item">
                 <span class="cc-ico" aria-hidden="true">“</span>
-                <div class="cc-txt">
+                <div v-if="editingSystemCardId === card.id" class="cc-txt cc-edit-copy">
+                  <input v-model="editingSystemCardText" type="text" maxlength="200" @keydown.enter.prevent="saveSystemCard(card)" />
+                  <div class="cc-card-actions">
+                    <button type="button" @click="saveSystemCard(card)">确定</button>
+                    <button type="button" @click="cancelEditSystemCard">取消</button>
+                  </div>
+                </div>
+                <div v-else class="cc-txt">
                   <p class="cc-copy">{{ card.text }}</p>
                   <div class="cc-meta"><span class="cc-type">{{ card.categoryLabel }}</span><span>{{ card.groupName }}</span></div>
+                  <div class="cc-card-actions">
+                    <button type="button" @click="startEditSystemCard(card)">编辑</button>
+                    <button class="danger" type="button" @click="deleteSystemCard(card)">删除</button>
+                  </div>
                 </div>
               </article>
             </section>
@@ -597,10 +818,46 @@ function save() {
     </template>
 
     <footer class="cardlib-actions">
-      <span class="footer-stat">我的 {{ cards.length }} 张 · 系统 {{ systemMeta.cardCount || 0 }} 张</span>
+      <span class="footer-stat">我的 {{ cards.length }} 张 · 系统 {{ effectiveSystemCardCount }} 张</span>
       <button class="cancel" type="button" @click="closeWindow">关闭</button>
       <button class="save" type="button" @click="save">保存</button>
     </footer>
+
+    <div v-if="systemLockDialogOpen" class="system-lock-layer" @click.self="closeSystemLockDialog">
+      <div class="system-lock-card" @click.stop>
+        <header class="system-lock-head">
+          <div>
+            <strong>管理「{{ systemCategory?.label }}」的小分组</strong>
+            <span>禁用只限制 TA 抽取，字卡仍可保留自用；删除会从字卡库直接移除。取消勾选再应用即可重新启用。</span>
+          </div>
+          <button type="button" aria-label="关闭" @click="closeSystemLockDialog">×</button>
+        </header>
+        <div class="system-lock-list">
+          <label v-for="group in systemLockPageGroups" :key="group.key" class="system-lock-item" :class="{ active: systemLockDraftKeys.includes(group.key) }">
+            <input type="checkbox" :checked="systemLockDraftKeys.includes(group.key)" @change="toggleSystemLockDraft(group.key)" />
+            <span><strong>{{ group.name }}</strong><small>{{ group.count }} 张字卡</small></span>
+            <b>{{ systemLockDraftKeys.includes(group.key) ? '已选' : '可用' }}</b>
+          </label>
+          <div v-if="!systemLockGroups.length" class="card-empty"><strong>该分类没有小分组</strong></div>
+        </div>
+        <div v-if="systemLockPageCount > 1" class="system-lock-pager">
+          <button type="button" :disabled="systemLockPage <= 0" @click="systemLockPage--">上一页</button>
+          <span>{{ systemLockPage + 1 }} / {{ systemLockPageCount }}</span>
+          <button type="button" :disabled="systemLockPage >= systemLockPageCount - 1" @click="systemLockPage++">下一页</button>
+        </div>
+        <div class="system-lock-bulk">
+          <button type="button" @click="toggleSystemLockPage">全选本页</button>
+          <button type="button" @click="selectAllSystemLockGroups">全选全部分组</button>
+          <button type="button" @click="clearSystemLockSelection">清空选择</button>
+        </div>
+        <footer class="system-lock-actions">
+          <span>已选 {{ systemLockSelectedCount }} 组</span>
+          <button type="button" @click="closeSystemLockDialog">取消</button>
+          <button type="button" class="danger" :disabled="!systemLockSelectedCount" @click="deleteSystemLockSelection">删除所选字卡</button>
+          <button type="button" class="primary" @click="applySystemLockSelection">{{ systemLockSelectedCount ? '应用并禁用' : '应用并全部启用' }}</button>
+        </footer>
+      </div>
+    </div>
 
     <div v-if="deleteGroupCandidate" class="delete-layer" @click.self="cancelDeleteGroup">
       <div class="delete-card">
@@ -717,6 +974,14 @@ function save() {
 .cc-actions select { width: 76px; min-width: 0; padding: 6px 4px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-soft); color: var(--theme-text); font-size: 9px; }
 .cc-delete { flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-danger-surface); color: var(--theme-accent-warm); font-size: 16px; line-height: 1; cursor: pointer; }
 .cc-item.readonly { padding-right: 13px; }
+.system-composer { margin: 8px 12px 0; }
+.system-composer textarea { min-height: 54px; }
+.cc-item.system-card-item { align-items: flex-start; padding-right: 12px; }
+.cc-edit-copy { display: flex; flex-direction: column; gap: 7px; }
+.cc-edit-copy input { width: 100%; padding: 7px 9px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-surface); color: var(--theme-text); font: inherit; font-size: 10px; }
+.cc-card-actions { display: flex; gap: 6px; margin-top: 6px; }
+.cc-card-actions button { padding: 3px 7px; border: 0; border-radius: 7px; background: var(--theme-soft); color: var(--theme-primary); font-size: 8px; font-weight: 750; cursor: pointer; }
+.cc-card-actions button.danger { color: var(--theme-danger, #b34d4d); }
 .card-empty { min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 12px; color: var(--theme-muted); text-align: center; }
 .card-empty strong { color: var(--theme-text); font-size: 12px; }
 .card-empty span { font-size: 10px; line-height: 1.55; }
@@ -772,4 +1037,39 @@ function save() {
 @media (prefers-reduced-motion: reduce) {
   .library-tab, .cc-item { transition: none; }
 }
-</style>
+
+/* 系统预设：按小分组多选禁用 */
+.system-lock-layer { position:absolute; inset:0; z-index:34; display:grid; place-items:center; padding:14px; background:rgba(var(--theme-overlay-rgb),.32); }
+.system-lock-card { width:min(560px,100%); max-height:min(86%,720px); display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--theme-border); border-radius:18px; background:var(--theme-surface); color:var(--theme-text); box-shadow:0 16px 42px rgba(var(--theme-overlay-rgb),.2); }
+.system-lock-head { flex:none; padding:14px 15px 11px; display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--theme-border-soft); }
+.system-lock-head strong { display:block; color:var(--theme-primary); font-size:13px; }
+.system-lock-head span { display:block; margin-top:4px; color:var(--theme-muted); font-size:9px; line-height:1.5; }
+.system-lock-head button { width:28px; height:28px; flex:none; padding:0; border:0; border-radius:50%; background:var(--theme-soft); color:var(--theme-text); font-size:17px; cursor:pointer; }
+.system-lock-list { min-height:0; overflow-y:auto; padding:12px; display:grid; grid-template-columns:1fr 1fr; gap:7px; overscroll-behavior:contain; }
+.system-lock-item { min-width:0; padding:9px; border:1px solid var(--theme-border-soft); border-radius:11px; background:var(--theme-soft); display:flex; align-items:center; gap:8px; cursor:pointer; }
+.system-lock-item.active { border-color:var(--theme-primary); background:var(--theme-pale); }
+.system-lock-item input { flex:none; accent-color:var(--theme-primary); }
+.system-lock-item > span { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.system-lock-item strong { overflow:hidden; color:var(--theme-text); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.system-lock-item small { color:var(--theme-muted); font-size:8px; }
+.system-lock-item b { flex:none; color:var(--theme-muted); font-size:8px; }
+.system-lock-item.active b { color:var(--theme-primary); }
+.system-lock-pager { flex:none; padding:0 12px 9px; display:flex; align-items:center; justify-content:center; gap:10px; }
+.system-lock-pager button,.system-lock-bulk button { padding:6px 9px; border:1px solid var(--theme-border-soft); border-radius:8px; background:var(--theme-soft); color:var(--theme-text); font:inherit; font-size:9px; cursor:pointer; }
+.system-lock-pager button:disabled { opacity:.4; cursor:default; }
+.system-lock-pager span { color:var(--theme-muted); font-size:9px; }
+.system-lock-bulk { flex:none; padding:0 12px 10px; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+.system-lock-actions { flex:none; padding:10px 12px 13px; border-top:1px solid var(--theme-border-soft); display:flex; align-items:center; gap:7px; }
+.system-lock-actions span { margin-right:auto; color:var(--theme-muted); font-size:9px; }
+.system-lock-actions button { padding:8px 12px; border:1px solid var(--theme-border-soft); border-radius:9px; background:var(--theme-soft); color:var(--theme-text); font:inherit; font-size:9.5px; font-weight:800; cursor:pointer; }
+.system-lock-actions button.primary { border-color:var(--theme-primary); background:var(--theme-primary); color:var(--theme-inverse); }
+.system-lock-actions button.danger { border-color:#c85f5f; background:#fff3f2; color:#a33c3c; }
+.system-lock-actions button:disabled { opacity:.42; cursor:not-allowed; }
+@media (max-width:680px) {
+  .system-lock-layer { padding:9px; }
+  .system-lock-card { max-height:90%; border-radius:15px; }
+  .system-lock-list { grid-template-columns:1fr; padding:9px; }
+  .system-lock-head { padding:12px 12px 9px; }
+  .system-lock-actions { padding:9px 10px 12px; flex-wrap:wrap; }
+  .system-lock-actions span { width:100%; margin:0 0 2px; }
+}</style>

@@ -8,6 +8,7 @@ import { reactive } from 'vue'
 export const store = reactive({
   page: 'home',
   homePage: 0,
+  albumCollectionId: 'default',
   view: 'phone', // phone：手机端结构视图；site：电脑网站视图
   unreadSms: 0,
   groupCreateRequest: 0,

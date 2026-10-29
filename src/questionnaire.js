@@ -76,6 +76,18 @@ function isNoiseLine(line) {
   return line.length <= 1
 }
 
+const RE_IMAGE = /!\[[^\]]*\]\(([^)]+)\)|(https?:\/\/[^\s)]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s)]*)?)/gi
+
+function extractImages(line) {
+  const images = []
+  const text = String(line || '').replace(RE_IMAGE, (match, markdownUrl, bareUrl) => {
+    const url = String(markdownUrl || bareUrl || '').trim()
+    if (url) images.push(url)
+    return ' '
+  })
+  return { text, images }
+}
+
 function optionIndex(letter, circled) {
   if (letter) return letter.toUpperCase().charCodeAt(0) - 65
   if (circled && OPTION_CIRCLED[circled] != null) return OPTION_CIRCLED[circled]
@@ -86,6 +98,9 @@ function optionIndex(letter, circled) {
 function splitInlineOptions(text) {
   return String(text || '')
     .replace(/\r\n?/g, '\n')
+    // OCR 经常丢失选项间的换行：苹果B.香蕉 / 苹果C香蕉
+    .replace(/([\u4e00-\u9fff。！？!?：:；;）)])([A-H])\s*[.、)]\s*/g, '$1\n$2. ')
+    .replace(/([\u4e00-\u9fff。！？!?：:；;）)])([A-H])(?=[\u4e00-\u9fff])/g, '$1\n$2. ')
     // 带点号的选项：A. / A、 / A)
     .replace(/([^\n])\s+([A-H])\s*[.、)]\s*/g, '$1\n$2. ')
     // OCR 有时会漏掉点号：「…（多选） A 一起看电影」
@@ -99,17 +114,24 @@ function splitInlineOptions(text) {
  */
 export function parseQuestionnaire(text) {
   const raw = splitInlineOptions(text)
-  const lines = raw.split('\n').map(normalizeLine).filter((line) => !isNoiseLine(line))
+  const lines = raw
+    .split('\n')
+    .map((line) => {
+      const extracted = extractImages(line)
+      return { line: normalizeLine(extracted.text), images: extracted.images }
+    })
+    .filter((entry) => entry.images.length || !isNoiseLine(entry.line))
   const questions = []
   let current = null
+  let pendingImages = []
 
   // 首行是「问卷标题」这类没有题号、没有问号的短句，且第二行就是题号 → 丢掉标题
   if (
     lines.length > 1 &&
-    !RE_QUESTION_NO.test(lines[0]) &&
-    !/[?？]$/.test(lines[0]) &&
-    lines[0].length <= 24 &&
-    RE_QUESTION_NO.test(lines[1])
+    !RE_QUESTION_NO.test(lines[0].line) &&
+    !/[?？]$/.test(lines[0].line) &&
+    lines[0].line.length <= 24 &&
+    RE_QUESTION_NO.test(lines[1].line)
   ) {
     lines.shift()
   }
@@ -136,6 +158,7 @@ export function parseQuestionnaire(text) {
       id: makeId('q'),
       title: current.title,
       type,
+      images: [...new Set(current.images || [])],
       options: options.map((option, index) => ({
         key: option.key || String.fromCharCode(65 + index),
         text: option.text,
@@ -144,7 +167,13 @@ export function parseQuestionnaire(text) {
     current = null
   }
 
-  lines.forEach((line) => {
+  lines.forEach((entry) => {
+    const line = entry.line
+    if (!line) {
+      if (current) current.images.push(...entry.images)
+      else pendingImages.push(...entry.images)
+      return
+    }
     const optionMatch = line.match(RE_OPTION)
     const questionMatch = line.match(RE_QUESTION_NO)
 
@@ -153,6 +182,7 @@ export function parseQuestionnaire(text) {
       const index = optionIndex(optionMatch[1], optionMatch[2])
       const text = line.replace(RE_OPTION, '').trim()
       if (text) current.options[index] = { key: String.fromCharCode(65 + index), text }
+      if (entry.images.length) current.images.push(...entry.images)
       return
     }
 
@@ -161,14 +191,17 @@ export function parseQuestionnaire(text) {
     if (isQuestion) {
       flush()
       const title = line.replace(RE_QUESTION_NO, '').replace(/^【|】$/g, '').trim()
-      current = { title, options: [], type: 'single' }
+      current = { title, options: [], type: 'single', images: [...pendingImages, ...entry.images] }
+      pendingImages = []
       return
     }
 
     if (current) {
       current.title = `${current.title} ${line}`.trim()
+      current.images.push(...entry.images)
     } else {
-      current = { title: line, options: [], type: 'single' }
+      current = { title: line, options: [], type: 'single', images: [...pendingImages, ...entry.images] }
+      pendingImages = []
     }
   })
   flush()

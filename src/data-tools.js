@@ -2,12 +2,21 @@ import { chatState, importChatBundle, saveChatDataNow } from './chat'
 import { settings, saveSettingsNow } from './settings'
 import { importMomentPosts, momentsState } from './moments'
 import { setLoadedStickers, stickerState, importStickerGroups, loadStickerLibrary } from './stickers'
-import { clearPhotos, listPhotos, putPhoto } from './album-store'
+import { clearPhotos, importAlbumCollections, listAlbumCollections, listPhotos, putPhoto } from './album-store'
 import { clearStickers, listStickers, putSticker } from './sticker-store'
 import { isNativeApp, saveTextFileNatively } from './native-bridge'
+import { listMirroredKeys } from './persistence'
+import {
+  APP_STORAGE_GROUPS,
+  EXPORT_CATEGORIES,
+  isAppDataCategory,
+  readStorageCategory,
+  storageKeysForCategory,
+} from './app-data-catalog'
+export { EXPORT_CATEGORIES }
 
 const BACKUP_FORMAT = 'zhengdu-backup'
-const BACKUP_VERSION = 1
+const BACKUP_VERSION = 2
 const APP_PREFIX = 'zhengdu_'
 const STORAGE_KEYS = {
   chat: 'zhengdu_sms_v1',
@@ -17,14 +26,6 @@ const STORAGE_KEYS = {
   moments: 'zhengdu_moments_v1',
 }
 
-export const EXPORT_CATEGORIES = [
-  { key: 'characters', label: '角色与群聊', hint: '联系人资料、头像、背景和群聊信息' },
-  { key: 'cards', label: '字卡', hint: '每个联系人的字卡和字卡分组' },
-  { key: 'stickers', label: '表情包', hint: '表情包文件、分组和使用分配' },
-  { key: 'chats', label: '聊天与朋友圈', hint: '聊天记录和朋友圈动态' },
-  { key: 'settings', label: '网站设置', hint: '纪念日、背景、TA的回复等设置' },
-  { key: 'album', label: '相册照片', hint: '相册中的全部照片' },
-]
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -51,16 +52,132 @@ function storageValueBytes(key) {
 }
 
 function localKeys() {
-  const keys = []
-  try {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index)
-      if (key && key.startsWith(APP_PREFIX)) keys.push(key)
+  return listMirroredKeys()
+}
+
+const MUSIC_FILES_DB = 'zhengdu_music_files_v1'
+const MUSIC_FILES_STORE = 'files'
+
+function openMusicFilesDb() {
+  if (typeof indexedDB === 'undefined') return Promise.reject(new Error('IndexedDB unavailable'))
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(MUSIC_FILES_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(MUSIC_FILES_STORE)) db.createObjectStore(MUSIC_FILES_STORE)
     }
-  } catch (e) {
-    /* 忽略无法读取本地存储的场景 */
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function requestResult(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+function dataUrlToBlob(dataUrl) {
+  const text = String(dataUrl || '')
+  const match = text.match(/^data:([^;,]+)?(;base64)?,(.*)$/s)
+  if (!match) return new Blob([text])
+  const type = match[1] || 'application/octet-stream'
+  const binary = match[2] ? atob(match[3]) : decodeURIComponent(match[3])
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return new Blob([bytes], { type })
+}
+
+async function serializeMusicFile(key, value) {
+  if (value instanceof Blob) {
+    return {
+      key: String(key),
+      kind: 'data-url',
+      name: String(value.name || key),
+      type: String(value.type || 'application/octet-stream'),
+      lastModified: Number(value.lastModified) || 0,
+      data: await blobToDataUrl(value),
+    }
   }
-  return keys
+  if (value instanceof ArrayBuffer) {
+    const blob = new Blob([value], { type: 'application/octet-stream' })
+    return { key: String(key), kind: 'data-url', name: String(key), type: blob.type, lastModified: 0, data: await blobToDataUrl(blob) }
+  }
+  if (typeof value === 'string') return { key: String(key), kind: 'text', data: value }
+  return { key: String(key), kind: 'json', data: clone(value) }
+}
+
+async function exportMusicFiles() {
+  try {
+    const db = await openMusicFilesDb()
+    const transaction = db.transaction(MUSIC_FILES_STORE, 'readonly')
+    const store = transaction.objectStore(MUSIC_FILES_STORE)
+    const [keys, values] = await Promise.all([requestResult(store.getAllKeys()), requestResult(store.getAll())])
+    const files = []
+    for (let index = 0; index < keys.length; index += 1) files.push(await serializeMusicFile(keys[index], values[index]))
+    return files
+  } catch {
+    return []
+  }
+}
+
+async function measureMusicFiles() {
+  try {
+    const db = await openMusicFilesDb()
+    const transaction = db.transaction(MUSIC_FILES_STORE, 'readonly')
+    const values = await requestResult(transaction.objectStore(MUSIC_FILES_STORE).getAll())
+    return values.reduce((sum, value) => {
+      if (value instanceof Blob) return sum + Number(value.size || 0)
+      if (value instanceof ArrayBuffer) return sum + value.byteLength
+      if (typeof value === 'string') return sum + textBytes(value)
+      return sum
+    }, 0)
+  } catch {
+    return 0
+  }
+}
+
+async function clearMusicFiles() {
+  try {
+    const db = await openMusicFilesDb()
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(MUSIC_FILES_STORE, 'readwrite')
+      transaction.objectStore(MUSIC_FILES_STORE).clear()
+      transaction.oncomplete = resolve
+      transaction.onerror = () => reject(transaction.error)
+    })
+  } catch {}
+}
+
+async function importMusicFiles(files) {
+  if (!Array.isArray(files) || !files.length) return 0
+  const db = await openMusicFilesDb()
+  let imported = 0
+  for (const file of files) {
+    if (!file?.key) continue
+    let value = null
+    if (file.kind === 'data-url') value = dataUrlToBlob(file.data)
+    else if (file.kind === 'text') value = String(file.data || '')
+    else value = clone(file.data)
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(MUSIC_FILES_STORE, 'readwrite')
+      transaction.objectStore(MUSIC_FILES_STORE).put(value, String(file.key))
+      transaction.oncomplete = resolve
+      transaction.onerror = () => reject(transaction.error)
+    })
+    imported += 1
+  }
+  return imported
 }
 
 function isCompressibleImage(value) {
@@ -104,7 +221,19 @@ export async function getStorageDetails() {
   const momentsBytes = storageValueBytes(STORAGE_KEYS.moments)
   const photoBytes = photos.reduce((sum, photo) => sum + textBytes(photo.src), 0)
   const stickerBytes = stickers.reduce((sum, sticker) => sum + textBytes(sticker.src), 0)
+  const musicFileBytes = await measureMusicFiles()
+  const appCategoryItems = Object.entries(APP_STORAGE_GROUPS).map(([key]) => {
+    const keys = storageKeysForCategory(key)
+    const category = EXPORT_CATEGORIES.find((item) => item.key === key)
+    return {
+      label: category?.label || key,
+      bytes: keys.reduce((sum, storageKey) => sum + storageValueBytes(storageKey), 0),
+      hint: `${keys.length} 项数据`,
+    }
+  }).filter((item) => item.bytes > 0)
   const items = [
+    ...appCategoryItems,
+    ...(musicFileBytes ? [{ label: '音乐本地音频', bytes: musicFileBytes, hint: 'IndexedDB 中的上传音频' }] : []),
     { label: '聊天、角色与字卡', bytes: chatBytes, hint: `${chatState.contacts.length} 个联系人，${chatState.groups.length} 个群聊` },
     { label: '网站设置', bytes: settingsBytes, hint: '背景、纪念日、TA的回复与头像框' },
     { label: '表情包文件', bytes: stickerBytes, hint: `${stickers.length} 个表情包` },
@@ -369,10 +498,20 @@ export async function buildBackup(categories) {
   if (selected.has('album')) {
     try {
       data.album = await listPhotos()
+      data.albumCollections = listAlbumCollections().filter((collection) => collection.kind === 'custom')
     } catch (e) {
       data.album = []
+      data.albumCollections = []
     }
   }
+  const appStorage = {}
+  for (const category of Object.keys(APP_STORAGE_GROUPS)) {
+    if (!selected.has(category)) continue
+    const entries = readStorageCategory(category)
+    if (Object.keys(entries).length) appStorage[category] = entries
+  }
+  if (Object.keys(appStorage).length) data.appStorage = appStorage
+  if (selected.has('music')) data.musicFiles = await exportMusicFiles()
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -419,6 +558,7 @@ export function availableImportCategories(backup) {
     if (category.key === 'stickers') return Array.isArray(data.stickers)
     if (category.key === 'settings') return Boolean(data.settings)
     if (category.key === 'album') return Array.isArray(data.album)
+    if (isAppDataCategory(category.key)) return Boolean(data.appStorage?.[category.key]) || (category.key === 'music' && Array.isArray(data.musicFiles))
     return false
   })
 }
@@ -426,7 +566,7 @@ export function availableImportCategories(backup) {
 export async function importBackup(backup, categories) {
   const selected = new Set(categories)
   const data = backup.data || {}
-  const result = { characters: 0, groups: 0, cards: 0, chats: 0, moments: 0, stickers: 0, settings: 0, album: 0 }
+  const result = { characters: 0, groups: 0, cards: 0, chats: 0, moments: 0, stickers: 0, settings: 0, album: 0, appData: 0, musicFiles: 0, needsReload: false }
 
   if (selected.has('characters')) {
     const imported = importChatBundle({
@@ -449,7 +589,7 @@ export async function importBackup(backup, categories) {
   if (selected.has('stickers')) {
     const groups = importStickerGroups(data.stickerGroups || [])
     for (const sticker of data.stickers || []) {
-      await putSticker(sticker)
+      await putSticker(clone(sticker))
       result.stickers += 1
     }
     await loadStickerLibrary()
@@ -461,10 +601,32 @@ export async function importBackup(backup, categories) {
     result.settings = 1
   }
   if (selected.has('album')) {
+    importAlbumCollections(data.albumCollections || [])
+    const validCollectionIds = new Set(listAlbumCollections().map((collection) => collection.id))
     for (const photo of data.album || []) {
-      await putPhoto(photo)
+      const collectionId = validCollectionIds.has(photo.collectionId) ? photo.collectionId : 'default'
+      await putPhoto({ ...clone(photo), collectionId })
       result.album += 1
     }
+  }
+  const appStorage = data.appStorage || {}
+  for (const [category, entries] of Object.entries(appStorage)) {
+    if (!selected.has(category) || !isAppDataCategory(category) || !entries || typeof entries !== 'object') continue
+    for (const [key, value] of Object.entries(entries)) {
+      if (!key.startsWith(APP_PREFIX)) continue
+      try {
+        localStorage.setItem(key, String(value ?? ''))
+        result.appData += 1
+      } catch {}
+    }
+    result.needsReload = true
+  }
+  if (selected.has('music') && Array.isArray(data.musicFiles)) {
+    result.musicFiles = await importMusicFiles(data.musicFiles)
+    if (result.musicFiles) result.needsReload = true
+  }
+  if (result.needsReload && typeof window !== 'undefined') {
+    window.setTimeout(() => window.location.reload(), 900)
   }
   return result
 }
@@ -480,6 +642,11 @@ export async function clearAllAppData() {
     await clearStickers()
   } catch (e) {
     /* 忽略 */
+  }
+  try {
+    await clearMusicFiles()
+  } catch (e) {
+    /* ignore */
   }
   try {
     sessionStorage.clear()

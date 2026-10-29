@@ -1,3 +1,5 @@
+import { normalizeImageUrl } from './image-utils'
+
 function clamp(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return 0.6
@@ -5,7 +7,8 @@ function clamp(value) {
 }
 
 function safeUrl(url) {
-  return String(url).replace(/"/g, '%22')
+  const value = String(url || '').trim()
+  return (normalizeImageUrl(value, { proxyHttp: true }) || value).replace(/"/g, '%22')
 }
 
 export function backgroundLayerStyle(url, opacity) {

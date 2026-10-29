@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import calendarData from '../data/calendar-data.json'
-import systemCardsData from '../data/system-cards.json'
+import { dictionaryCardsFor } from '../dictionary-cards'
 import { primaryContact, contactDisplayName } from '../chat'
 import { settings, CONTACT_AUTO_DEFAULTS } from '../settings'
 
@@ -10,10 +10,6 @@ const TEST_SEED_KEY = 'zhengdu_calendar_test_seed_v2'
 const MOODS = calendarData.MOODS
 const ACTIVITIES = calendarData.ACTIVITIES
 const MOOD_ICONS = calendarData.MOOD_ICONS
-const DIARY_DICTIONARY_CARDS = (() => {
-  const category = (systemCardsData.categories || []).find((item) => item.key === 'dict')
-  return (category?.groups || []).flatMap((group) => group.cards || []).filter(Boolean)
-})()
 
 function localKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -104,7 +100,10 @@ const diaryPermissions = computed(() => {
 })
 
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
-const moods = MOODS
+const moods = computed(() => [
+  ...MOODS,
+  ...(settings.customDiaryMoods || []).map((mood) => ({ mood, cat: '平静', desc: '' })),
+])
 const cardsPool = computed(() => {
   const contact = primaryContact()
   const cards = Array.isArray(contact?.cards) ? contact.cards : []
@@ -129,8 +128,9 @@ function hash(text) {
 }
 function pick(list, seed) { return list[hash(seed) % list.length] }
 function cardMessage(seed, minCount = 3, maxCount = 8, separator = '  ') {
-  const pool = diaryPermissions.value.dictionary && DIARY_DICTIONARY_CARDS.length
-    ? DIARY_DICTIONARY_CARDS
+  const dictionaryCards = dictionaryCardsFor(['dict'])
+  const pool = diaryPermissions.value.dictionary && dictionaryCards.length
+    ? dictionaryCards
     : cardsPool.value
   if (!pool.length) return '今天也想对你说点什么...'
   const min = Math.max(1, Math.min(minCount, maxCount))
@@ -143,7 +143,7 @@ function cardMessage(seed, minCount = 3, maxCount = 8, separator = '  ') {
   return selectedCards.join(separator)
 }
 function taMood(dateKey) {
-  return pick(MOODS, `ta-mood-${dateKey}`)
+  return pick(moods.value, `ta-mood-${dateKey}`)
 }
 function ensureDayRecord(dateKey) {
   let entry = state.value.days[dateKey]

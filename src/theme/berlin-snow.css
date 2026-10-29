@@ -1,0 +1,221 @@
+/* 柏林雪季 */
+html[data-site-theme="berlinSnow"] {
+  color-scheme: light;
+  --theme-primary: #888888;
+  --theme-primary-rgb: 136, 136, 136;
+  --theme-primary-light: #a5a5a5;
+  --theme-accent: #aeb4bd;
+  --theme-accent-rgb: 174, 180, 189;
+  --theme-muted: #9a9a9a;
+  --theme-muted-rgb: 154, 154, 154;
+  --app-icon-color: #777777;
+  --dock-color: #888888;
+  --dock-active-color: #666666;
+  --theme-text: #717171;
+  --theme-text-strong: #5d5d5d;
+  --theme-text-rgb: 113, 113, 113;
+  --theme-border: #e3e4e8;
+  --theme-border-rgb: 227, 228, 232;
+  --theme-pale: #f0f1f4;
+  --theme-pale-rgb: 240, 241, 244;
+  --theme-soft: #f7f7f9;
+  --theme-soft-rgb: 247, 247, 249;
+  --theme-surface: rgba(255, 255, 255, 0.78);
+  --theme-surface-rgb: 255, 255, 255;
+  --theme-border-soft: #ececef;
+  --theme-bg: #eceef2;
+  --theme-bg-deep: #dfe3e9;
+  --theme-bg-tint: #f5f6f8;
+  --theme-accent-warm: #c9b6bd;
+  --theme-accent-warm-rgb: 201, 182, 189;
+  --theme-danger-border: #e4e4e7;
+  --theme-danger-surface: #faf8f9;
+  --theme-positive: #9fbbb5;
+  --theme-overlay-rgb: 80, 84, 90;
+  --theme-shadow-rgb: 100, 105, 114;
+  --theme-avatar: #aeb4bd;
+  --theme-inverse: #ffffff;
+  --button-radius: 8px;
+  --button-shadow: none;
+}
+
+html[data-site-theme="berlinSnow"] .site-stage {
+  background:
+    radial-gradient(circle at 15% 18%, rgba(255, 255, 255, 0.92) 0 1px, transparent 2px),
+    radial-gradient(circle at 82% 34%, rgba(255, 255, 255, 0.75) 0 1px, transparent 2px),
+    linear-gradient(145deg, #e7eaf0 0%, #f7f8fa 48%, #e8ebf0 100%) !important;
+  background-size: 42px 42px, 57px 57px, 100% 100% !important;
+}
+html[data-site-theme="berlinSnow"] .echoes-app-shell {
+  background: #f5f5f8 !important;
+}
+html[data-site-theme="berlinSnow"] .app-topbar {
+  border-bottom: 1px solid #e3e4e8 !important;
+  background: rgba(245, 245, 248, 0.93) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+html[data-site-theme="berlinSnow"] .echoes-character-card,
+html[data-site-theme="berlinSnow"] .settings-menu > button,
+html[data-site-theme="berlinSnow"] .skin-choice,
+html[data-site-theme="berlinSnow"] .frame-target-switch button,
+html[data-site-theme="berlinSnow"] .theme-frame-preview {
+  border: 1px solid rgba(227, 228, 232, 0.95) !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+}
+html[data-site-theme="berlinSnow"] .dock-tilt {
+  border: 1px solid rgba(227, 228, 232, 0.9) !important;
+  background: rgba(255, 255, 255, 0.86) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+html[data-site-theme="berlinSnow"] .echoes-chat-header.chat-head {
+  position: relative !important;
+  min-height: 86px;
+  padding: calc(14px + env(safe-area-inset-top)) 14px 18px !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e3e4e8 !important;
+  background: #f5f5f8 !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="berlinSnow"] .echoes-chat-header.chat-head::after {
+  content: "❆  ·  ❆  ·  ❆" !important;
+  display: block !important;
+  position: absolute !important;
+  right: 14px;
+  bottom: 4px;
+  color: #c0c0c0 !important;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+html[data-site-theme="berlinSnow"] .chat-head-main h2 {
+  color: #777777 !important;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+}
+html[data-site-theme="berlinSnow"] .chat-head-main span {
+  color: #9a9a9a !important;
+}
+html[data-site-theme="berlinSnow"] .chat-back,
+html[data-site-theme="berlinSnow"] .chat-head-options,
+html[data-site-theme="berlinSnow"] .sticker-btn,
+html[data-site-theme="berlinSnow"] .chat-more-btn,
+html[data-site-theme="berlinSnow"] .plus-btn {
+  border: 1px solid #e3e4e8 !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  color: #999999 !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="berlinSnow"] .chat-send-btn {
+  border: 1px solid #dfe1e5 !important;
+  background: #ffffff !important;
+  color: #999999 !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="berlinSnow"] .echoes-input-area.chat-input-area {
+  border-top: 1px solid #e3e4e8 !important;
+  background: rgba(245, 245, 248, 0.94) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+html[data-site-theme="berlinSnow"] .chat-field {
+  border: 1px solid #e3e4e8 !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+  color: #717171 !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="berlinSnow"] .chat-field::placeholder {
+  color: #a5a5a5 !important;
+}
+html[data-site-theme="berlinSnow"] .echoes-timestamp,
+html[data-site-theme="berlinSnow"] .nudge-row > span,
+html[data-site-theme="berlinSnow"] .call-row > span {
+  border: 1px solid #e3e4e8 !important;
+  background: rgba(255, 255, 255, 0.64) !important;
+  color: #888888 !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+html[data-site-theme="berlinSnow"][data-bubble-skin="default"] .echoes-bubble-user,
+html[data-site-theme="berlinSnow"][data-bubble-skin="default"] .echoes-bubble-other {
+  opacity: 1 !important;
+  position: relative !important;
+  overflow: visible !important;
+  transform: translateY(21px) !important;
+  border: 2px solid #e3e4e8 !important;
+  border-radius: 3px !important;
+  padding: 7px 12px !important;
+  background: rgba(245, 245, 248, 0.72) !important;
+  color: #717171 !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+html[data-site-theme="berlinSnow"][data-bubble-skin="default"] .echoes-bubble-user::before,
+html[data-site-theme="berlinSnow"][data-bubble-skin="default"] .echoes-bubble-other::before {
+  content: "❆" !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  position: absolute !important;
+  top: -10px !important;
+  width: 16px !important;
+  height: 16px !important;
+  color: #b9bec7 !important;
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  z-index: 9 !important;
+  pointer-events: none !important;
+  animation: echoes-berlin-theme-spin 3s linear infinite !important;
+}
+html[data-site-theme="berlinSnow"][data-bubble-skin="default"] .echoes-bubble-user::before {
+  left: -7px !important;
+  right: auto !important;
+}
+html[data-site-theme="berlinSnow"][data-bubble-skin="default"] .echoes-bubble-other::before {
+  right: -7px !important;
+  left: auto !important;
+}
+@keyframes echoes-berlin-theme-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+html[data-site-theme="berlinSnow"] .transfer-decoration-theme-berlinSnow {
+  border: 1px solid #e3e4e8 !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.64) !important;
+  color: #717171 !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.transfer-skin-theme-berlinSnow::before,
+.transfer-skin-theme-berlinSnow::after {
+  content: none !important;
+  display: none !important;
+}
+.transfer-skin-theme-berlinSnow {
+  border: 1px solid #e3e4e8 !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.64) !important;
+  color: #717171 !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}

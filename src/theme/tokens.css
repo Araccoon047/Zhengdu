@@ -91,12 +91,15 @@ html[data-site-theme="default"] .echoes-app-glow {
   display: none !important;
 }
 
+/* 气泡和头像框皮肤由用户独立选择，不随主题二次调透明或去色。 */
 html[data-site-theme="default"] .echoes-bubble-other::before,
+html[data-site-theme="default"] .echoes-bubble-other::after,
 html[data-site-theme="default"] .echoes-bubble-user::before,
+html[data-site-theme="default"] .echoes-bubble-user::after,
 html[data-site-theme="default"] .echoes-avatar-user::after,
 html[data-site-theme="default"] .echoes-avatar-other::after {
-  opacity: 0.18 !important;
-  filter: grayscale(1) !important;
+  opacity: 1 !important;
+  filter: none !important;
 }
 html[data-site-theme="echoes"] .publish-button {
   border-color: #475f94 !important;
@@ -209,3 +212,91 @@ html[data-site-theme="peach"] {
   --button-shadow: none;
 }
 
+
+html[data-site-theme="thinCocoa"] {
+  color-scheme: light;
+  --theme-primary: #7EB7AA;
+  --theme-primary-rgb: 126, 183, 170;
+  --theme-primary-light: #A6D2C7;
+  --theme-accent: #4C3D2F;
+  --theme-accent-rgb: 76, 61, 47;
+  --theme-muted: #8D816E;
+  --theme-muted-rgb: 141, 129, 110;
+  --app-icon-color: #4C3D2F;
+  --dock-color: #4C3D2F;
+  --dock-active-color: #7EB7AA;
+  --theme-text: #6E584F;
+  --theme-text-strong: #4C3D2F;
+  --theme-text-rgb: 110, 88, 79;
+  --theme-border: #D8CFB0;
+  --theme-border-rgb: 216, 207, 176;
+  --theme-pale: #E1F6F1;
+  --theme-pale-rgb: 225, 246, 241;
+  --theme-soft: #F8FCFB;
+  --theme-soft-rgb: 248, 252, 251;
+  --theme-surface: #FFFFFF;
+  --theme-surface-rgb: 255, 255, 255;
+  --theme-border-soft: #E3EEE9;
+  --theme-bg: #F4FAF8;
+  --theme-bg-deep: #B5A198;
+  --theme-bg-tint: #F8FCFB;
+  --theme-accent-warm: #B5A198;
+  --theme-accent-warm-rgb: 181, 161, 152;
+  --theme-danger-border: #D8CFB0;
+  --theme-danger-surface: #FFF8F2;
+  --theme-positive: #7EB7AA;
+  --theme-overlay-rgb: 76, 61, 47;
+  --theme-shadow-rgb: 76, 61, 47;
+  --theme-avatar: #7EB7AA;
+  --theme-inverse: #FFFFFF;
+  --button-radius: 13px;
+  --button-shadow: none;
+}
+html[data-site-theme="thinCocoa"] .echoes-app-glow { display: none !important; }
+html[data-site-theme="thinCocoa"] .echoes-bubble-user::before,
+html[data-site-theme="thinCocoa"] .echoes-bubble-other::before,
+html[data-site-theme="thinCocoa"] .echoes-avatar-user::after,
+html[data-site-theme="thinCocoa"] .echoes-avatar-other::after {
+  opacity: 1 !important;
+  filter: none !important;
+}
+html[data-site-theme="strawberryMilk"] {
+  color-scheme: light;
+  --theme-primary: #F29DB0;
+  --theme-primary-rgb: 242, 157, 176;
+  --theme-primary-light: #F7BDCB;
+  --theme-accent: #D97E94;
+  --theme-accent-rgb: 217, 126, 148;
+  --theme-muted: #B98C94;
+  --theme-muted-rgb: 185, 140, 148;
+  --app-icon-color: #D97E94;
+  --dock-color: #D97E94;
+  --dock-active-color: #F29DB0;
+  --theme-text: #74545B;
+  --theme-text-strong: #5C3F46;
+  --theme-text-rgb: 116, 84, 91;
+  --theme-border: #F2C7CF;
+  --theme-border-rgb: 242, 199, 207;
+  --theme-pale: #FAD8DF;
+  --theme-pale-rgb: 250, 216, 223;
+  --theme-soft: #FFF9F5;
+  --theme-soft-rgb: 255, 249, 245;
+  --theme-surface: #FFFFFF;
+  --theme-surface-rgb: 255, 255, 255;
+  --theme-border-soft: #F6DDE2;
+  --theme-bg: #FFF3E8;
+  --theme-bg-deep: #FAD8DF;
+  --theme-bg-tint: #FFF9F5;
+  --theme-accent-warm: #F29DB0;
+  --theme-accent-warm-rgb: 242, 157, 176;
+  --theme-danger-border: #F2C7CF;
+  --theme-danger-surface: #FFF7F8;
+  --theme-positive: #F29DB0;
+  --theme-overlay-rgb: 92, 63, 70;
+  --theme-shadow-rgb: 92, 63, 70;
+  --theme-avatar: #F29DB0;
+  --theme-inverse: #FFFFFF;
+  --button-radius: 14px;
+  --button-shadow: none;
+}
+html[data-site-theme="strawberryMilk"] .echoes-app-glow { display: none !important; }

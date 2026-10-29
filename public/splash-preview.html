@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>争渡开屏动画预览</title>
+<style>
+  :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { margin:0; padding:24px; background:#111318; color:#eef1f5; }
+  h1 { margin:0 0 6px; font-size:22px; }
+  p { margin:0 0 22px; color:#9ca5b4; font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px; align-items:start; }
+  .item { min-width:0; }
+  .label { margin:0 0 8px; color:#f2f4f8; font-size:13px; font-weight:700; text-align:center; }
+  .phone { width:100%; aspect-ratio:390/844; overflow:hidden; border:1px solid #343944; border-radius:26px; background:#000; box-shadow:0 14px 34px rgba(0,0,0,.35); }
+  iframe { width:390px; height:844px; border:0; display:block; transform-origin:top left; }
+  @media (max-width:1180px){ .grid{grid-template-columns:repeat(2,minmax(0,1fr));} iframe{transform:scale(.62);} .phone{width:242px;margin:auto;} }
+  @media (max-width:560px){ body{padding:14px;} .grid{grid-template-columns:1fr;gap:22px;} .phone{width:min(242px,100%);} }
+</style>
+</head>
+<body>
+  <h1>争渡 · 开屏动画手机比例预览</h1>
+  <p>四个预览均按 390 × 844 手机视口运行，包含实际动画。</p>
+  <div class="grid">
+    <section class="item"><div class="label">莫比乌斯环 1</div><div class="phone"><iframe src="/?splash=mobius1" title="莫比乌斯环1"></iframe></div></section>
+    <section class="item"><div class="label">莫比乌斯环 2</div><div class="phone"><iframe src="/?splash=mobius2" title="莫比乌斯环2"></iframe></div></section>
+    <section class="item"><div class="label">浪漫春日 1</div><div class="phone"><iframe src="/?splash=spring1" title="浪漫春日1"></iframe></div></section>
+    <section class="item"><div class="label">浪漫春日 2</div><div class="phone"><iframe src="/?splash=spring2" title="浪漫春日2"></iframe></div></section>
+  </div>
+</body>
+</html>

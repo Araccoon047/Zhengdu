@@ -1,12 +1,41 @@
 import { reactive, watch } from 'vue'
-import { chatState, contactById, contactDisplayName } from './chat'
+import { chatState, contactById, contactDisplayName, showAppNotice } from './chat'
 import { settings } from './settings'
-import systemCardsData from './data/system-cards.json'
+import { dictionaryCardsFor } from './dictionary-cards'
+import { systemCategoryTexts } from './system-card-pool'
 
 const KEY = 'zhengdu_mailbox_v1'
+const REPLY_QUEUE_KEY = 'zhengdu_mailbox_reply_queue_v1'
 let proactiveTimer = null
 let stopSettingsWatch = null
-const replyTimers = new Set()
+const replyTimers = new Map()
+
+function loadReplyQueue() {
+  try {
+    const list = JSON.parse(localStorage.getItem(REPLY_QUEUE_KEY) || '[]')
+    return Array.isArray(list)
+      ? list.filter((item) => item?.id && item?.contactId && Number(item.dueAt) > 0)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function saveReplyQueue(list) {
+  try { localStorage.setItem(REPLY_QUEUE_KEY, JSON.stringify(list)) } catch {}
+}
+
+function armReply(item) {
+  if (!item || replyTimers.has(item.id)) return
+  const dueAt = Number(item.dueAt) || Date.now()
+  const delay = Math.max(0, dueAt - Date.now())
+  const timer = setTimeout(() => {
+    replyTimers.delete(item.id)
+    saveReplyQueue(loadReplyQueue().filter((entry) => entry.id !== item.id))
+    if (contactById(item.contactId)) addContactLetter(item.contactId, { replyToId: item.replyToId })
+  }, delay)
+  replyTimers.set(item.id, timer)
+}
 
 function loadLetters() {
   try {
@@ -40,27 +69,24 @@ function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)]
 }
 
-const LETTER_DICTIONARY_CARDS = (() => {
-  const category = (systemCardsData.categories || []).find((item) => item.key === 'dict')
-  return (category?.groups || []).flatMap((group) => group.cards || []).filter(Boolean)
-})()
-
 function cardsForContact(contact) {
   const cards =
     contact && Array.isArray(contact.cards) && contact.cards.length
       ? contact.cards
       : settings.replyCards
-  return Array.isArray(cards)
+  const customCards = Array.isArray(cards)
     ? cards
         .map((card) => (typeof card === 'string' ? card : String(card?.text ?? '').trim()))
         .filter(Boolean)
     : []
+  return customCards.length ? customCards : systemCategoryTexts('main')
 }
 
 function randomLetterBody(contact) {
   const auto = settings.contactAutoSettings?.[contact?.id] || {}
-  const cards = auto.letterDictionaryEnabled === true && LETTER_DICTIONARY_CARDS.length
-    ? LETTER_DICTIONARY_CARDS
+  const dictionaryCards = dictionaryCardsFor(['dict'])
+  const cards = auto.letterDictionaryEnabled === true && dictionaryCards.length
+    ? dictionaryCards
     : cardsForContact(contact)
   if (!cards.length) return ''
   const min = Math.max(1, Math.min(50, Number(auto.letterCardMin) || 1))
@@ -86,6 +112,16 @@ function addLetter({ direction, kind, contact, body, replyToId = null }) {
   }
   mailboxState.letters.unshift(letter)
   saveLetters()
+  if (direction === 'incoming' && settings.mailboxNotifications) {
+    showAppNotice({
+      actionPage: 'mail',
+      name: contactDisplayName(contact),
+      avatar: contact.avatar || 'TA',
+      avatarImage: contact.avatarImage || '',
+      color: contact.color || 'var(--theme-primary)',
+      text: replyToId ? `${contactDisplayName(contact)} 回信了` : `${contactDisplayName(contact)} 寄来一封信`,
+    })
+  }
   return letter
 }
 
@@ -109,11 +145,11 @@ function scheduleContactReply(contactId, replyToId) {
   const min = Math.max(1, Number(settings.letterReplyMin) || 1)
   const max = Math.max(min, Number(settings.letterReplyMax) || min)
   const delay = (min + Math.random() * (max - min)) * 60000
-  const timer = setTimeout(() => {
-    replyTimers.delete(timer)
-    addContactLetter(contactId, { replyToId })
-  }, delay)
-  replyTimers.add(timer)
+  const queue = loadReplyQueue().filter((item) => !(item.contactId === contactId && item.replyToId === replyToId))
+  const item = { id: makeId('mail-reply'), contactId, replyToId, dueAt: Date.now() + delay }
+  queue.push(item)
+  saveReplyQueue(queue)
+  armReply(item)
 }
 
 export function addUserLetter(contactId, body, options = {}) {
@@ -168,6 +204,7 @@ function scheduleNextContactLetter() {
 }
 export function startMailboxEngine() {
   scheduleNextContactLetter()
+  loadReplyQueue().forEach(armReply)
   if (!stopSettingsWatch) {
     stopSettingsWatch = watch(
       () => [settings.proactiveLettersEnabled, settings.letterMinInterval, settings.letterMaxInterval],

@@ -1,0 +1,186 @@
+/* Faint Silk · 浅丝 by 落吟 */
+html[data-site-theme="faintSilk"] {
+  color-scheme: light;
+  --theme-primary: #6f6f6f;
+  --theme-primary-rgb: 111, 111, 111;
+  --theme-primary-light: #929292;
+  --theme-accent: #a1a1a1;
+  --theme-accent-rgb: 161, 161, 161;
+  --theme-muted: #999999;
+  --theme-muted-rgb: 153, 153, 153;
+  --app-icon-color: #656565;
+  --dock-color: #777777;
+  --dock-active-color: #4d4d4d;
+  --theme-text: #333333;
+  --theme-text-strong: #171717;
+  --theme-text-rgb: 51, 51, 51;
+  --theme-border: rgba(180, 180, 180, 0.5);
+  --theme-border-rgb: 180, 180, 180;
+  --theme-pale: rgba(255, 255, 255, 0.3);
+  --theme-pale-rgb: 255, 255, 255;
+  --theme-soft: rgba(255, 255, 255, 0.4);
+  --theme-soft-rgb: 255, 255, 255;
+  --theme-surface: rgba(255, 255, 255, 0.55);
+  --theme-surface-rgb: 255, 255, 255;
+  --theme-border-soft: rgba(190, 190, 190, 0.35);
+  --theme-bg: #e8e8eb;
+  --theme-bg-deep: #d8d8dc;
+  --theme-bg-tint: #f2f2f4;
+  --theme-accent-warm: #b9a7ad;
+  --theme-accent-warm-rgb: 185, 167, 173;
+  --theme-danger-border: rgba(190, 175, 180, 0.45);
+  --theme-danger-surface: rgba(255, 247, 249, 0.64);
+  --theme-positive: #97b4a9;
+  --theme-overlay-rgb: 70, 70, 70;
+  --theme-shadow-rgb: 80, 80, 80;
+  --theme-avatar: #a1a1a1;
+  --theme-inverse: #ffffff;
+  --button-radius: 12px;
+  --button-shadow: none;
+}
+
+html[data-site-theme="faintSilk"] .site-stage {
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.46), transparent 42%),
+    linear-gradient(300deg, rgba(205, 205, 210, 0.3), transparent 45%),
+    #e8e8eb !important;
+}
+html[data-site-theme="faintSilk"] .echoes-app-shell {
+  background:
+    linear-gradient(125deg, rgba(255, 255, 255, 0.22), transparent 36%),
+    linear-gradient(315deg, rgba(200, 200, 207, 0.16), transparent 42%),
+    #eeeeef !important;
+}
+html[data-site-theme="faintSilk"] .app-topbar {
+  border-bottom: 1px solid rgba(180, 180, 180, 0.3) !important;
+  background: rgba(255, 255, 255, 0.34) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+html[data-site-theme="faintSilk"] .echoes-character-card,
+html[data-site-theme="faintSilk"] .settings-menu > button,
+html[data-site-theme="faintSilk"] .skin-choice,
+html[data-site-theme="faintSilk"] .frame-target-switch button,
+html[data-site-theme="faintSilk"] .theme-frame-preview {
+  border: 1px solid rgba(180, 180, 180, 0.38) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.32) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+}
+html[data-site-theme="faintSilk"] .dock-tilt {
+  border: 1px solid rgba(255, 255, 255, 0.42) !important;
+  background: rgba(255, 255, 255, 0.42) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+}
+
+html[data-site-theme="faintSilk"] .echoes-chat-header.chat-head {
+  min-height: 88px;
+  padding: calc(14px + env(safe-area-inset-top)) 14px 20px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(180, 180, 180, 0.32) !important;
+  background: rgba(255, 255, 255, 0.28) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+}
+html[data-site-theme="faintSilk"] .chat-head-main h2 {
+  color: #222222 !important;
+  font-weight: 500 !important;
+}
+html[data-site-theme="faintSilk"] .chat-head-main span {
+  color: #888888 !important;
+}
+html[data-site-theme="faintSilk"] .chat-back,
+html[data-site-theme="faintSilk"] .chat-head-options,
+html[data-site-theme="faintSilk"] .sticker-btn,
+html[data-site-theme="faintSilk"] .chat-more-btn,
+html[data-site-theme="faintSilk"] .plus-btn {
+  border: 1px solid rgba(255, 255, 255, 0.46) !important;
+  background: rgba(255, 255, 255, 0.24) !important;
+  color: #333333 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+}
+html[data-site-theme="faintSilk"] .chat-send-btn {
+  border: 1px solid rgba(180, 180, 180, 0.5) !important;
+  background: rgba(255, 255, 255, 0.34) !important;
+  color: #444444 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.62) !important;
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+}
+html[data-site-theme="faintSilk"] .echoes-input-area.chat-input-area {
+  border-top: 1px solid rgba(180, 180, 180, 0.34) !important;
+  background: rgba(255, 255, 255, 0.24) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+}
+html[data-site-theme="faintSilk"] .chat-field {
+  border: 1px solid rgba(180, 180, 180, 0.38) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #171717 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.52) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-site-theme="faintSilk"] .chat-field::placeholder {
+  color: #999999 !important;
+}
+html[data-site-theme="faintSilk"] .echoes-timestamp,
+html[data-site-theme="faintSilk"] .nudge-row > span,
+html[data-site-theme="faintSilk"] .call-row > span {
+  border: 1px solid rgba(255, 255, 255, 0.38) !important;
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: #333333 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.48) !important;
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+}
+
+html[data-site-theme="faintSilk"][data-bubble-skin="default"] .echoes-bubble-user,
+html[data-site-theme="faintSilk"][data-bubble-skin="default"] .echoes-bubble-other {
+  opacity: 1 !important;
+  position: relative !important;
+  overflow: visible !important;
+  transform: translateY(21px) !important;
+  border: 1px solid rgba(180, 180, 180, 0.5) !important;
+  border-radius: 12px !important;
+  padding: 6px 13px !important;
+  background: rgba(255, 255, 255, 0.38) !important;
+  color: #171717 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), 0 2px 7px rgba(0, 0, 0, 0.055) !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+html[data-site-theme="faintSilk"] .transfer-decoration-theme-faintSilk {
+  border: 1px solid rgba(180, 180, 180, 0.48) !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.3) !important;
+  color: #444444 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.transfer-skin-theme-faintSilk::before,
+.transfer-skin-theme-faintSilk::after {
+  content: none !important;
+  display: none !important;
+}
+.transfer-skin-theme-faintSilk {
+  border: 1px solid rgba(180, 180, 180, 0.48) !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.3) !important;
+  color: #444444 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}

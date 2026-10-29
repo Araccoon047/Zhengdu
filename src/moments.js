@@ -1,7 +1,8 @@
 import { reactive, watch } from 'vue'
-import { chatState, contactById, contactDisplayName, primaryContact } from './chat'
+import { chatState, contactById, contactDisplayName, primaryContact, showAppNotice } from './chat'
 import { settings } from './settings'
 import systemCardsData from './data/system-cards.json'
+import { dictionaryCardsFor } from './dictionary-cards'
 
 const KEY = 'zhengdu_moments_v1'
 const photos = import.meta.glob('./assets/photos/*.svg', {
@@ -62,10 +63,6 @@ function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)]
 }
 
-const MOMENT_DICTIONARY_CARDS = (() => {
-  const category = (systemCardsData.categories || []).find((item) => item.key === 'dict')
-  return (category?.groups || []).flatMap((group) => group.cards || []).filter(Boolean)
-})()
 function contactCards(contact) {
   if (!contact) return []
   const cards = Array.isArray(contact.cards) ? contact.cards : []
@@ -74,7 +71,8 @@ function contactCards(contact) {
 }
 
 function composeFromCards(contact, min = 1, max = 3, useDictionary = false) {
-  const cards = (useDictionary && MOMENT_DICTIONARY_CARDS.length ? MOMENT_DICTIONARY_CARDS : contactCards(contact)).filter(Boolean)
+  const dictionaryCards = useDictionary ? dictionaryCardsFor(['dict']) : []
+  const cards = (dictionaryCards.length ? dictionaryCards : contactCards(contact)).filter(Boolean)
   if (!cards.length) return randomItem(fallbackComments)
   const count = min + Math.floor(Math.random() * (max - min + 1))
   return Array.from({ length: count }, () => randomItem(cards)).join('，')
@@ -91,6 +89,18 @@ function chance(percent) {
 
 function autoForContact(contact) {
   return settings.contactAutoSettings?.[contact?.id] || {}
+}
+
+function notifyMoment(contact, text) {
+  if (!settings.momentsNotifications) return
+  showAppNotice({
+    actionPage: 'moments',
+    name: contactDisplayName(contact),
+    avatar: contact?.avatar || 'TA',
+    avatarImage: contact?.avatarImage || '',
+    color: contact?.color || 'var(--theme-primary)',
+    text,
+  })
 }
 
 function delayMs(value, unit, fallback = 2500) {
@@ -115,9 +125,10 @@ function schedulePostInteraction(post, contact, auto) {
       if (!livePost) return
       livePost.likes = [
         ...(livePost.likes || []).filter((item) => item.contactId !== contact.id),
-        { contactId: contact.id, name },
+        { contactId: contact.id, name, createdAt: Date.now() },
       ]
       savePosts()
+      notifyMoment(contact, `${name} 点赞了你的朋友圈`)
     }, delayMs(auto.momentsLikeDelay, auto.momentsLikeUnit, 2500))
     interactionTimers.add(timer)
   }
@@ -130,9 +141,10 @@ function schedulePostInteraction(post, contact, auto) {
       if ((livePost.comments || []).some((item) => item.contactId === contact.id)) return
       livePost.comments = [
         ...(livePost.comments || []),
-        { id: makeId('mc'), contactId: contact.id, name, text: composeFromCards(contact, 1, 3, auto.momentsDictionaryEnabled === true) },
+        { id: makeId('mc'), contactId: contact.id, name, text: composeFromCards(contact, 1, 3, auto.momentsDictionaryEnabled === true), createdAt: Date.now() },
       ]
       savePosts()
+      notifyMoment(contact, `${name} 评论了你的朋友圈`)
     }, delayMs(auto.momentsCommentDelay, auto.momentsCommentUnit, 4000))
     interactionTimers.add(timer)
   }
@@ -147,9 +159,10 @@ function schedulePostInteraction(post, contact, auto) {
       if (!livePost) return
       livePost.contactFavorites = [
         ...(livePost.contactFavorites || []).filter((item) => item.contactId !== contact.id),
-        { contactId: contact.id, name },
+        { contactId: contact.id, name, createdAt: Date.now() },
       ]
       savePosts()
+      notifyMoment(contact, `${name} 收藏了你的朋友圈`)
     }, delayMs(auto.momentsLikeDelay, auto.momentsLikeUnit, 2500))
     interactionTimers.add(timer)
   }
@@ -194,6 +207,7 @@ text: (() => {
   momentsState.posts.unshift(post)
   savePosts()
   addMutualContactInteractions(post)
+  notifyMoment(contact, `${contactDisplayName(contact)} 发布了朋友圈`)
   return post
 }
 
@@ -277,9 +291,11 @@ const auto = settings.contactAutoSettings?.[contact.id] || {}
         replyToId: replyTo.id,
         replyToName: settings.userName || '我',
         replyToText: replyTo.text,
+        createdAt: Date.now(),
       },
     ]
     savePosts()
+    notifyMoment(contact, `${contactDisplayName(contact)} 回复了你的评论`)
   }, value * factor)
   interactionTimers.add(timer)
 }
@@ -289,18 +305,11 @@ export function deleteMoment(postId) {
 }
 
 export function momentTime(createdAt) {
-  const diff = Math.max(0, Date.now() - Number(createdAt || Date.now()))
-  const minute = 60000
-  const hour = minute * 60
-  const day = hour * 24
-  if (diff < minute) return '刚刚'
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`
-  if (diff < day * 7) return `${Math.floor(diff / day)} 天前`
-  const date = new Date(createdAt)
-  return `${date.getMonth() + 1}月${date.getDate()}日`
+  const date = new Date(Number(createdAt) || Date.now())
+  const datePart = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+  const timePart = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  return `${datePart} ${timePart}`
 }
-
 function clearScheduledPostTimers() {
   scheduledPostTimers.forEach((timer) => clearTimeout(timer))
   scheduledPostTimers.clear()

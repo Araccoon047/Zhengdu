@@ -17,15 +17,7 @@
       "replyFrequency": "normal",
       "notificationSound": "default",
       "backstory": "",
-      "messages": [
-        {
-          "id": "c1m1",
-          "from": "other",
-          "text": "我在这里。",
-          "time": "09:12",
-          "read": false
-        }
-      ]
+      "messages": []
     }
   ]
 }

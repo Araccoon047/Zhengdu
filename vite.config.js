@@ -8,7 +8,7 @@ export default defineConfig({
   build: {
     // 独立输出目录，避免旧构建文件被系统进程占用。
     outDir: 'dist-web',
-    emptyOutDir: false,
+    emptyOutDir: true,
   },
   server: {
     host: '127.0.0.1',

@@ -7,7 +7,10 @@ import systemCardsData from './data/system-cards.json'
 import { loadStickerLibrary, randomStickerForContact, stickerState } from './stickers'
 import { listPhotos } from './album-store'
 import musicData from './data/music.json'
+import { dictionaryEntriesFor } from './dictionary-cards'
 import { isNativeApp, nativeNotificationPermission, requestNativePermissions, showNativeNotification } from './native-bridge'
+import { SYSTEM_GIFT_GROUPS, SYSTEM_GIFT_NAMES, randomItem as randomGiftItem } from './gift-data'
+import { isSystemCardGroupDeleted, systemCategoryTexts } from './system-card-pool'
 
 const STORAGE_KEY = 'zhengdu_sms_v1'
 const GROUPS_KEY = 'zhengdu_groups_v1'
@@ -17,6 +20,7 @@ const DEFAULT_CARD_GROUPS = [
   { id: 'basic', name: '基础' },
   { id: 'report', name: '报备' },
   { id: 'weather', name: '天气' },
+  { id: 'gift', name: '礼物' },
 ]
 
 function clone(value) {
@@ -48,6 +52,9 @@ function normalizeContact(contact, index = 0, legacy = false) {
         locked: group.locked === true,
       }))
     : clone(DEFAULT_CARD_GROUPS).map((group) => ({ ...group, locked: false }))
+  if (!cardGroups.some((group) => group.id === 'gift')) {
+    cardGroups.push({ id: 'gift', name: '礼物', locked: false })
+  }
   const groupIds = new Set(cardGroups.map((group) => group.id))
   const cardList = Array.isArray(source.cards) ? source.cards : []
   const cards = cardList
@@ -92,6 +99,10 @@ function normalizeContact(contact, index = 0, legacy = false) {
       source.avatarImage ||
       (legacy && index === 0 ? settings.opponentAvatarImage || '' : ''),
     avatarFrame: source.avatarFrame || '',
+    avatarFrameSkin: String(source.avatarFrameSkin || settings.contactAvatarFrameSkin || 'none'),
+    avatarFrameOffsetX: Math.max(-80, Math.min(80, Math.round(Number(source.avatarFrameOffsetX) || 0))),
+    avatarFrameOffsetY: Math.max(-80, Math.min(80, Math.round(Number(source.avatarFrameOffsetY) || 0))),
+    avatarFrameScale: Math.max(0.5, Math.min(2, Number(source.avatarFrameScale) || 1)),
     chatBackground:
       source.chatBackground ||
       (legacy && index === 0 ? settings.chatBackground || '' : ''),
@@ -144,7 +155,8 @@ function normalizeGroup(group) {
     id: source.id || makeId('g'),
     name: String(source.name || '群聊').trim() || '群聊',
     memberIds: Array.isArray(source.memberIds) ? source.memberIds : [],
-    avatar: '群',
+    avatar: String(source.avatar || '群').slice(0, 8),
+    avatarImage: typeof source.avatarImage === 'string' ? source.avatarImage : '',
     color: themeAwareColor(source.color, 'var(--theme-accent)'),
     chatBackground: source.chatBackground || '',
     chatBackgroundOpacity: clampOpacity(source.chatBackgroundOpacity),
@@ -190,8 +202,12 @@ let callRingTimer = null
 // 通话中联系人主动挂断的定时器（受「禁止联系人主动挂断」与「主动挂断概率」联立控制）
 let callHangupTimer = null
 const replyTimers = new Set()
+const groupCallTimers = new Set()
 
-function saveContacts() {
+let contactsSaveTimer = null
+let groupsSaveTimer = null
+
+function writeContactsNow() {
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -202,11 +218,40 @@ function saveContacts() {
   }
 }
 
-function saveGroups() {
+function writeGroupsNow() {
   try {
     localStorage.setItem(GROUPS_KEY, JSON.stringify({ groups: chatState.groups }))
   } catch (e) {
     /* 忽略不可写场景 */
+  }
+}
+
+function saveContacts() {
+  clearTimeout(contactsSaveTimer)
+  contactsSaveTimer = setTimeout(() => {
+    contactsSaveTimer = null
+    writeContactsNow()
+  }, 140)
+}
+
+function saveGroups() {
+  clearTimeout(groupsSaveTimer)
+  groupsSaveTimer = setTimeout(() => {
+    groupsSaveTimer = null
+    writeGroupsNow()
+  }, 140)
+}
+
+function flushChatStorage() {
+  if (contactsSaveTimer) {
+    clearTimeout(contactsSaveTimer)
+    contactsSaveTimer = null
+    writeContactsNow()
+  }
+  if (groupsSaveTimer) {
+    clearTimeout(groupsSaveTimer)
+    groupsSaveTimer = null
+    writeGroupsNow()
   }
 }
 
@@ -377,6 +422,47 @@ function announce(conversation, text) {
   pushToast(conversation, text)
 }
 
+export function showAppNotice(notice = {}) {
+  if (!settings.inAppNotifications) return false
+  const text = String(notice.text || '').trim()
+  if (!text) return false
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  if (hidden) {
+    if (isNativeApp()) {
+      showNativeNotification(String(notice.name || '争渡'), text)
+    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification(String(notice.name || '争渡'), {
+          body: text,
+          tag: `zhengdu-${notice.actionPage || 'app'}`,
+          silent: true,
+        })
+      } catch (e) {
+        /* 系统通知失败时仍保留模块内记录 */
+      }
+    }
+    return true
+  }
+  chatState.notification = {
+    id: makeId('notice'),
+    actionPage: String(notice.actionPage || ''),
+    actionId: String(notice.actionId || ''),
+    contactId: String(notice.contactId || ''),
+    conversationType: notice.conversationType === 'group' ? 'group' : 'contact',
+    name: String(notice.name || '争渡'),
+    avatar: String(notice.avatar || '✦').slice(0, 8),
+    avatarImage: String(notice.avatarImage || ''),
+    color: String(notice.color || 'var(--theme-primary)'),
+    text,
+  }
+  clearTimeout(notificationTimer)
+  const id = chatState.notification.id
+  notificationTimer = setTimeout(() => {
+    if (chatState.notification?.id === id) chatState.notification = null
+  }, 5200)
+  return true
+}
+
 export function dismissNotification() {
   chatState.notification = null
 }
@@ -395,6 +481,8 @@ function clearCallTimers() {
   clearTimeout(callRingTimer)
   clearTimeout(callHangupTimer)
   clearInterval(callClockTimer)
+  groupCallTimers.forEach((timer) => clearTimeout(timer))
+  groupCallTimers.clear()
   callConnectTimer = null
   callRingTimer = null
   callHangupTimer = null
@@ -570,6 +658,148 @@ export function startOutgoingCall(kind) {
   return true
 }
 
+function groupNotice(group, text) {
+  if (!group) return
+  showAppNotice({ actionPage: 'sms', contactId: group.id, conversationType: 'group', name: group.name, avatar: group.avatar || '群', avatarImage: group.avatarImage || '', color: group.color || 'var(--theme-primary)', text })
+}
+function groupCallNotice(call, text) {
+  groupNotice(groupById(call?.groupId), text)
+}
+function refreshGroupCallConnection(call) {
+  if (!call?.groupId) return
+  if (call.joinedMemberIds.length) {
+    if (call.status !== '通话中') {
+      call.status = '通话中'
+      startCallClock(call.connectedAt || Date.now())
+    }
+    groupCallNotice(call, `${call.kind === 'video' ? '视频通话' : '语音通话'}已接通，当前 ${call.joinedMemberIds.length + (call.userJoined ? 1 : 0)} 人`)
+  } else if (!call.userJoined) {
+    finishGroupCall('completed')
+  }
+  saveCallSession()
+}
+export function startGroupCall(groupId, memberIds, kind = 'voice') {
+  const group = groupById(groupId)
+  const members = groupMembers(group).filter((member) => memberIds.includes(member.id))
+  if (!group || !members.length || chatState.call) return false
+  clearCallTimers()
+  clearSavedCallSession()
+  chatState.call = {
+    kind: kind === 'video' ? 'video' : 'voice',
+    direction: 'outgoing',
+    status: '正在呼叫…',
+    contactId: members[0].id,
+    groupId: group.id,
+    groupName: group.name,
+    participantIds: members.map((member) => member.id),
+    joinedMemberIds: [],
+    userJoined: true,
+    seconds: 0,
+    startedAt: Date.now(),
+    connectedAt: null,
+    expanded: true,
+  }
+  saveCallSession()
+  groupCallNotice(chatState.call, `发起${kind === 'video' ? '视频' : '语音'}群通话`)
+  members.forEach((member, index) => {
+    const timer = setTimeout(() => {
+      groupCallTimers.delete(timer)
+      const current = chatState.call
+      if (!current?.groupId || current.groupId !== group.id || !current.participantIds.includes(member.id)) return
+      if (!current.joinedMemberIds.includes(member.id)) current.joinedMemberIds.push(member.id)
+      refreshGroupCallConnection(current)
+    }, 900 + index * 620)
+    groupCallTimers.add(timer)
+  })
+  return true
+}
+export function startIncomingGroupCall(groupId, memberId, kind = 'voice') {
+  const group = groupById(groupId)
+  const caller = contactById(memberId)
+  if (!group || !caller || !group.memberIds.includes(caller.id) || chatState.call) return false
+  const auto = autoForContact(caller)
+  if (auto.callsAllowed === false) return false
+  clearCallTimers()
+  clearSavedCallSession()
+  chatState.call = {
+    kind: kind === 'video' ? 'video' : 'voice',
+    direction: 'incoming',
+    status: '邀请你通话',
+    contactId: caller.id,
+    groupId: group.id,
+    groupName: group.name,
+    participantIds: [...group.memberIds],
+    joinedMemberIds: [caller.id],
+    userJoined: false,
+    seconds: 0,
+    startedAt: Date.now(),
+    connectedAt: null,
+    expanded: true,
+  }
+  saveCallSession()
+  groupNotice(group, `${contactDisplayName(caller)}发起了群${kind === 'video' ? '视频' : '语音'}通话`)
+  const ringSeconds = Math.max(1, Number(auto.incomingRingSeconds) || 30)
+  callRingTimer = setTimeout(() => finishGroupCall('missed'), ringSeconds * 1000)
+  return true
+}
+
+
+export function joinGroupCall() {
+  const call = chatState.call
+  if (!call?.groupId) return false
+  call.userJoined = true
+  call.expanded = true
+  refreshGroupCallConnection(call)
+  return true
+}
+export function leaveGroupCall() {
+  const call = chatState.call
+  if (!call?.groupId) return false
+  call.userJoined = false
+  call.expanded = false
+  groupCallNotice(call, '你退出了群通话')
+  if (call.joinedMemberIds.length < 2) finishGroupCall('completed')
+  else saveCallSession()
+  return true
+}
+export function endGroupCall() {
+  if (!chatState.call?.groupId) return false
+  finishGroupCall('completed')
+  return true
+}
+export function simulateGroupCallMember(memberId, joined = true) {
+  const call = chatState.call
+  if (!call?.groupId || !call.participantIds.includes(memberId)) return false
+  call.joinedMemberIds = joined
+    ? [...new Set([...call.joinedMemberIds, memberId])]
+    : call.joinedMemberIds.filter((id) => id !== memberId)
+  refreshGroupCallConnection(call)
+  return true
+}
+function finishGroupCall(outcome = 'completed') {
+  const current = chatState.call
+  if (!current?.groupId) return false
+  const group = groupById(current.groupId)
+  syncCallSeconds()
+  const seconds = current.seconds
+  const result = outcome === 'declined'
+    ? '已拒绝'
+    : outcome === 'missed'
+      ? '未接听'
+      : outcome === 'cancelled'
+        ? '已取消'
+        : formatCallDuration(seconds)
+  const text = `群${current.kind === 'video' ? '视频通话' : '语音通话'} · ${result}`
+  clearCallTimers()
+  chatState.call = null
+  clearSavedCallSession()
+  if (group) {
+    group.messages.push({ id: makeId('group-call'), from: 'system', type: 'nudge', text, time: nowHM(), createdAt: Date.now(), read: true })
+    saveGroups()
+    refreshUnread()
+  }
+  return true
+}
 export function startIncomingCall(contactId, kind) {
   const contact = contactById(contactId)
   if (!contact || chatState.call) return false
@@ -599,6 +829,10 @@ export function answerIncomingCall() {
   if (!chatState.call || chatState.call.direction !== 'incoming') return false
   clearTimeout(callRingTimer)
   callRingTimer = null
+  if (chatState.call.groupId) {
+    joinGroupCall()
+    return true
+  }
   chatState.call.status = '通话中'
   startCallClock(Date.now())
   scheduleContactHangup()
@@ -607,6 +841,10 @@ export function answerIncomingCall() {
 
 export function declineIncomingCall() {
   if (!chatState.call || chatState.call.direction !== 'incoming') return false
+  if (chatState.call.groupId) {
+    finishGroupCall('declined')
+    return true
+  }
   finishCall('declined')
   return true
 }
@@ -617,6 +855,7 @@ export function hangupCallByContact() {
 }
 export function hangupCall() {
   if (!chatState.call) return false
+  if (chatState.call.groupId) return leaveGroupCall()
   const outcome =
     chatState.call.status === '通话中'
       ? 'completed'
@@ -653,6 +892,11 @@ function restoreCallSession() {
       startedAt,
       connectedAt: Number(saved.connectedAt) || null,
       expanded: saved.expanded !== false,
+      groupId: String(saved.groupId || ''),
+      groupName: String(saved.groupName || ''),
+      participantIds: Array.isArray(saved.participantIds) ? saved.participantIds : [],
+      joinedMemberIds: Array.isArray(saved.joinedMemberIds) ? saved.joinedMemberIds : [],
+      userJoined: saved.userJoined !== false,
     }
     chatState.call = restored
 
@@ -708,10 +952,12 @@ const SYSTEM_CARD_GROUPS = (() => {
   }))
 })()
 const SYSTEM_CHAT_CARDS = SYSTEM_CARD_GROUPS.flatMap((group) => group.cards)
-const DICTIONARY_TEXT_CARDS = (() => {
-  const category = (systemCardsData.categories || []).find((item) => item.key === 'dict')
-  return (category?.groups || []).flatMap((group) => group.cards || []).filter(Boolean)
-})()
+const SYSTEM_CARD_SOURCE = new Map()
+for (const group of SYSTEM_CARD_GROUPS) {
+  for (const card of group.cards) {
+    if (!SYSTEM_CARD_SOURCE.has(card)) SYSTEM_CARD_SOURCE.set(card, group.name)
+  }
+}
 const REPLY_EMOJIS = ['🙂', '🥺', '🌙', '✨', '💙', '🫶', '🌿', '☕']
 const REPLY_KAOMOJI = ['(｡•́︿•̀｡)', '(๑•̀ㅂ•́)و✧', '(￣▽￣)', '(*/ω＼*)', '(´･ᴗ･ `)', 'ฅ^•ﻌ•^ฅ']
 
@@ -749,6 +995,7 @@ function customCardsForContact(contact) {
   const locked = lockedCustomGroupIds(contact)
   return source
     .filter((card) => {
+      if (typeof card === 'object' && card?.groupId === 'gift') return false
       if (!locked.size || typeof card === 'string') return true
       return !locked.has(card?.groupId)
     })
@@ -757,14 +1004,39 @@ function customCardsForContact(contact) {
 }
 
 /** 系统预设中未被锁定的字卡；settings.systemLockedCardGroups 存 'main:3' 这类分组键 */
+let systemCardPoolCache = []
+let systemCardPoolCacheKey = ''
+
 function systemCardsForContact() {
-  const locked = new Set(
-    Array.isArray(settings.systemLockedCardGroups) ? settings.systemLockedCardGroups : []
-  )
-  if (!locked.size) return SYSTEM_CHAT_CARDS
-  return SYSTEM_CARD_GROUPS
-    .filter((group) => !locked.has(group.key))
-    .flatMap((group) => group.cards)
+  const lockedList = Array.isArray(settings.systemLockedCardGroups) ? settings.systemLockedCardGroups : []
+  const deletedList = Array.isArray(settings.systemDeletedCardGroups) ? settings.systemDeletedCardGroups : []
+  const hiddenList = Array.isArray(settings.systemHiddenCardIds) ? settings.systemHiddenCardIds : []
+  const edits = settings.systemCardEdits || {}
+  const customList = (settings.systemCustomCards || []).filter((card) => card?.categoryKey === 'main' && !hiddenList.includes(card.id) && !isSystemCardGroupDeleted('main', Number(card.groupIndex)))
+  const cacheKey = [
+    lockedList.join('|'),
+    deletedList.join('|'),
+    hiddenList.join('|'),
+    JSON.stringify(edits),
+    JSON.stringify(customList),
+  ].join('::')
+  if (cacheKey === systemCardPoolCacheKey) return systemCardPoolCache
+  const locked = new Set(lockedList)
+  const hidden = new Set(hiddenList)
+  const custom = customList.map((card) => card.text)
+  systemCardPoolCache = SYSTEM_CARD_GROUPS
+    .flatMap((group, groupIndex) => {
+      if (locked.has(group.key) || isSystemCardGroupDeleted('main', groupIndex)) return []
+      return group.cards
+        .map((card, cardIndex) => {
+          const id = `main:${groupIndex}:${cardIndex}`
+          return hidden.has(id) ? '' : edits[id] || card
+        })
+        .filter(Boolean)
+    })
+    .concat(custom)
+  systemCardPoolCacheKey = cacheKey
+  return systemCardPoolCache
 }
 
 function cardsForContact(contact) {
@@ -784,24 +1056,110 @@ function cardsForContact(contact) {
   return useSystem ? systemCards : customCards
 }
 
-export function drawReplyCards(contact = primaryContact(), options = {}) {
+function sourceLabelsForCard(contact, text) {
+  const card = (contact?.cards || []).find(
+    (item) => (typeof item === 'string' ? item : String(item?.text ?? '').trim()) === text
+  )
+  if (card && typeof card === 'object') {
+    const group = (contact?.cardGroups || []).find((item) => item.id === card.groupId)
+    return ['我的字卡', group?.name || '未分组']
+  }
+  const edits = settings.systemCardEdits || {}
+  for (let groupIndex = 0; groupIndex < SYSTEM_CARD_GROUPS.length; groupIndex += 1) {
+    const group = SYSTEM_CARD_GROUPS[groupIndex]
+    for (let cardIndex = 0; cardIndex < group.cards.length; cardIndex += 1) {
+      const id = `main:${groupIndex}:${cardIndex}`
+      if ((edits[id] || group.cards[cardIndex]) === text) return ['系统预设', group.name]
+    }
+  }
+  if ((settings.systemCustomCards || []).some((item) => item.categoryKey === 'main' && item.text === text && !(settings.systemHiddenCardIds || []).includes(item.id))) {
+    return ['系统预设', '自定义系统字卡']
+  }
+  return ['系统预设', SYSTEM_CARD_SOURCE.get(text) || '未分组']
+}
+
+function uniqueLabels(labels) {
+  return [...new Set((labels || []).map((label) => String(label || '').trim()).filter(Boolean))]
+}
+
+
+export function giftNameOptionsForContact(contact = primaryContact()) {
+  const hidden = new Set(settings.systemHiddenCardIds || [])
+  const locked = new Set(settings.systemLockedCardGroups || [])
+  const giftLocked = locked.has('gift:0') || isSystemCardGroupDeleted('gift', 0)
+  const edits = settings.systemCardEdits || {}
+  const systemNames = (giftLocked ? [] : SYSTEM_GIFT_GROUPS[0].cards)
+    .map((text, index) => {
+      const id = `gift:0:${index}`
+      return hidden.has(id) ? '' : edits[id] || text
+    })
+    .filter(Boolean)
+    .map((text) => {
+      const entry = SYSTEM_GIFT_NAMES.find((item) => item.text === text)
+      return { text, emoji: entry?.emoji || '🎁', price: entry?.price || 0, source: '系统预设' }
+    })
+  const customSystem = (giftLocked ? [] : (settings.systemCustomCards || []))
+    .filter((card) => card.categoryKey === 'gift' && Number(card.groupIndex) === 0 && !hidden.has(card.id))
+    .map((card) => ({ text: card.text, emoji: '🎁', price: 0, source: '系统预设' }))
+  const customNames = (contact?.cards || [])
+    .filter((card) => typeof card === 'object' && card?.groupId === 'gift' && card.text)
+    .map((card) => ({ text: String(card.text).trim(), emoji: '🎁', price: 0, source: '我的字卡' }))
+  const unique = new Map()
+  for (const item of [...customNames, ...systemNames, ...customSystem]) {
+    if (item.text && !unique.has(item.text)) unique.set(item.text, item)
+  }
+  return [...unique.values()]
+}
+
+export function randomGiftForContact(contact = primaryContact()) {
+  const names = giftNameOptionsForContact(contact).filter((item) => item.source === '系统预设')
+  const gift = names.length ? randomGiftItem(names) : null
+  const customNotes = (contact?.cards || [])
+    .filter((card) => typeof card === 'object' && card?.text && card?.groupId !== 'gift')
+    .map((card) => String(card.text).trim())
+    .filter(Boolean)
+  const note = customNotes.length ? randomGiftItem(customNotes) : '一点心意'
+  const price = gift?.price || 20 + Math.floor(Math.random() * 501)
+  return {
+    name: gift?.text || '一份小礼物',
+    note,
+    emoji: gift?.emoji || '🎁',
+    price: Number(price.toFixed(2)),
+  }
+}
+
+function drawReplyBatches(contact = primaryContact(), options = {}) {
   const cards = cardsForContact(contact)
   if (!cards.length) return []
   const auto = autoForContact(contact)
-  const explicitRange = options.forceRange === true
+  const messageMin = Math.max(1, Math.round(Number(options.messageMin ?? options.min ?? auto.replyMessageMin) || 1))
+  const messageMax = Math.max(messageMin, Math.round(Number(options.messageMax ?? options.max ?? auto.replyMessageMax) || messageMin))
+  const messageCount = randomCount(messageMin, messageMax, 1, 1)
   const multiEnabled = auto.multiCardEnabled !== false
-  const multiTriggered = explicitRange || (multiEnabled && chancePercent(auto.multiCardChance, 100, auto.multiCardChanceRandom))
-  if (!multiTriggered) return [cards[Math.floor(Math.random() * cards.length)]]
-  const count = randomCount(
-    options.min ?? auto.multiCardMin ?? settings.replyCardCountMin,
-    options.max ?? auto.multiCardMax ?? settings.replyCardCountMax,
-    1,
-    2
-  )
-  return Array.from(
-    { length: count },
-    () => cards[Math.floor(Math.random() * cards.length)]
-  )
+  return Array.from({ length: messageCount }, () => {
+    const multiTriggered = multiEnabled && chancePercent(auto.multiCardChance, 100, auto.multiCardChanceRandom)
+    const cardCount = multiTriggered
+      ? randomCount(
+          options.cardMin ?? auto.multiCardMin ?? settings.replyCardCountMin,
+          options.cardMax ?? auto.multiCardMax ?? settings.replyCardCountMax,
+          1,
+          1
+        )
+      : 1
+    const picked = Array.from(
+      { length: cardCount },
+      () => cards[Math.floor(Math.random() * cards.length)]
+    ).filter(Boolean)
+    return {
+      text: picked.join(' '),
+      cards: picked,
+      sourceLabels: uniqueLabels(picked.flatMap((cardText) => sourceLabelsForCard(contact, cardText))),
+    }
+  }).filter((batch) => batch.text)
+}
+
+export function drawReplyCards(contact = primaryContact(), options = {}) {
+  return drawReplyBatches(contact, options).map((batch) => batch.text)
 }
 
 /**
@@ -818,8 +1176,13 @@ export function drawTaTodayCards(min = 1, max = 3) {
 }
 
 function selectionDelayFor(contact) {
-  const min = Math.max(1, Number(settings.replyDelayMinSeconds) || 4)
-  const max = Math.max(min, Number(settings.replyDelayMaxSeconds) || min)
+  const auto = autoForContact(contact)
+  const normalize = (value, fallback = 0) => {
+    const number = Number(value)
+    return Number.isFinite(number) ? Math.max(0, number) : fallback
+  }
+  const min = normalize(auto.replyDelayMinSeconds ?? settings.replyDelayMinSeconds, 4)
+  const max = Math.max(min, normalize(auto.replyDelayMaxSeconds ?? settings.replyDelayMaxSeconds, min))
   const seconds = min + Math.random() * (max - min)
   if (contact?.replyFrequency === 'fast') return seconds * 650
   if (contact?.replyFrequency === 'slow') return seconds * 1500
@@ -897,7 +1260,7 @@ function queueCardSequence(conversation, contact, texts, options, deliver) {
         return
       }
 
-      deliver(currentConversation, texts[index])
+      deliver(currentConversation, texts[index], index)
       index += 1
 
       if (index < texts.length) {
@@ -914,19 +1277,33 @@ function queueCardSequence(conversation, contact, texts, options, deliver) {
   scheduleNextCard()
 }
 
-const PROACTIVE_GIFTS = [
-  { name: '一束小雏菊', note: '路过花店时想到你。' },
-  { name: '一杯热可可', note: '今天也要甜甜的。' },
-  { name: '一枚月亮徽章', note: '把今晚的月亮送给你。' },
-  { name: '一条软乎乎的围巾', note: '降温了，记得保暖。' },
-]
+
 
 const PROACTIVE_LOCATIONS = [
-  '海边旧灯塔',
-  '街角咖啡店',
-  '开满花的公园',
-  '夜晚的便利店',
-  '回家路上的公交站',
+  '公司楼下的便利店',
+  '公司附近的咖啡馆',
+  '办公室靠窗的位置',
+  '下班后的写字楼门口',
+  '梧桐树下的街边',
+  '老城区的石板路',
+  '街角的长椅',
+  '下雨的公交站',
+  '楼下的小商店',
+  '巷口的杂货铺',
+  '热闹的商场',
+  '常去的那家小餐厅',
+  '街边面馆',
+  '安静的甜品店',
+  '弯弯的小巷',
+  '种满花的小巷',
+  '城市公园',
+  '湖边公园',
+  '长椅旁的草地',
+  '回家路上的花店',
+  '家门口',
+  '亮着灯的客厅',
+  '医院门口',
+  '医院附近的小路',
 ]
 
 const PROACTIVE_TRANSFER_NOTES = [
@@ -980,16 +1357,28 @@ async function runRandomProactiveAction(contact) {
     // 「主动消息 每次发送最少/最多条数」直接决定这一次连发几条
     const min = Math.max(1, Math.min(10, Math.round(Number(auto.proactiveMessageMin) || 1)))
     const max = Math.max(min, Math.min(10, Math.round(Number(auto.proactiveMessageMax) || min)))
-    const texts = drawReplyCards(contact, { forceRange: true, min, max })
-    deliverIncomingCards(contact.id, texts)
+    const batches = drawReplyBatches(contact, { messageMin: min, messageMax: max })
+    deliverIncomingCards(contact.id, batches.map((batch) => batch.text), {
+      sourceLabels: batches.map((batch) => batch.sourceLabels),
+    })
     return true
   }
 
   if (action === 'gift') {
-    const gift = randomItem(PROACTIVE_GIFTS)
+    const gift = randomGiftForContact(contact)
     deliverProactiveAction(
       contact,
-      { type: 'gift', text: gift.name, note: gift.note },
+      {
+        type: 'gift',
+        text: gift.name,
+        giftName: gift.name,
+        giftWish: gift.note,
+        giftEmoji: gift.emoji,
+        giftPrice: gift.price,
+        giftCat: 'custom',
+        giftSelf: false,
+        giftSourceGroup: '系统预设 · 礼物',
+      },
       `[礼物] ${gift.name}`
     )
     return true
@@ -1000,7 +1389,14 @@ async function runRandomProactiveAction(contact) {
     const note = randomItem(PROACTIVE_TRANSFER_NOTES)
     deliverProactiveAction(
       contact,
-      { type: 'transfer', amount, text: note },
+      {
+        type: 'transfer',
+        amount,
+        text: note,
+        transferRecipientId: 'me',
+        transferRecipientName: '我',
+        transferRecipientKind: 'user',
+      },
       `[转账] ¥${amount} ${note}`
     )
     return true
@@ -1057,7 +1453,10 @@ function deliverIncomingCards(contactId, texts, options = {}) {
     return
   }
 
-  queueCardSequence(contact, contact, texts, options, (liveContact, text) => {
+  const sourceLabels = Array.isArray(options.sourceLabels)
+    ? options.sourceLabels
+    : texts.map((text) => sourceLabelsForCard(contact, text))
+  queueCardSequence(contact, contact, texts, options, (liveContact, text, index) => {
     const reading = isReading(liveContact)
     const auto = autoForContact(liveContact)
     liveContact.messages.push({
@@ -1069,6 +1468,9 @@ function deliverIncomingCards(contactId, texts, options = {}) {
       createdAt: Date.now(),
       read: reading,
       quote: randomQuoteFrom(liveContact, auto.quoteChance, auto.quoteChanceRandom),
+      sourceLabels: uniqueLabels(sourceLabels[index] || []),
+      sourceGroup: (sourceLabels[index] || []).at(-1) || '',
+      dictionary: options.dictionary === true,
     })
     saveContacts()
     refreshUnread()
@@ -1081,24 +1483,50 @@ function decorateReplyTexts(texts, auto) {
   if (!result.length) return result
   const last = result.length - 1
   if (chancePercent(auto.emojiChance, 5, auto.emojiChanceRandom)) {
-    result[last] = `${result[last]} ${randomItem(REPLY_EMOJIS)}`
+    const emojis = systemCategoryTexts('emoji')
+    const emoji = emojis.length ? randomItem(emojis) : ''
+    if (emoji) result[last] = `${result[last]} ${emoji}`
   }
   if (chancePercent(auto.kaomojiChance, 5, auto.kaomojiChanceRandom)) {
-    result[last] = `${result[last]} ${randomItem(REPLY_KAOMOJI)}`
+    const kaomojis = systemCategoryTexts('kaomoji')
+    const kaomoji = kaomojis.length ? randomItem(kaomojis) : ''
+    if (kaomoji) result[last] = `${result[last]} ${kaomoji}`
   }
   return result
 }
 
-function dictionaryReplyTexts(auto) {
-  if (!DICTIONARY_TEXT_CARDS.length) return []
+function dictionaryReplyEntries(auto) {
+  const dictionaryEntries = dictionaryEntriesFor()
+  if (!dictionaryEntries.length) return []
   const count = randomCount(auto.dictionaryMin, auto.dictionaryMax, 2, 5)
-  const cards = Array.from(
+  const entries = Array.from(
     { length: count },
-    () => DICTIONARY_TEXT_CARDS[Math.floor(Math.random() * DICTIONARY_TEXT_CARDS.length)]
+    () => dictionaryEntries[Math.floor(Math.random() * dictionaryEntries.length)]
   )
-  if (auto.dictionaryMulti !== false) return cards
+  if (auto.dictionaryMulti !== false) {
+    return entries.map((entry) => ({
+      text: entry.text,
+      labels: uniqueLabels(['拼词', entry.categoryLabel, entry.groupName]),
+    }))
+  }
   const separator = auto.multiCardJoin === 'comma' ? '，' : auto.multiCardJoin === 'semicolon' ? '；' : auto.multiCardJoin === 'none' ? '' : ' '
-  return [cards.join(separator)]
+  return [{
+    text: entries.map((entry) => entry.text).join(separator),
+    labels: uniqueLabels(['拼词', ...entries.flatMap((entry) => [entry.categoryLabel, entry.groupName])]),
+  }]
+}
+
+async function deliverSpecialReply(contact, payload, preview) {
+  if (!contact) return false
+  setSelectingFor(contact, true)
+  try {
+    await new Promise((resolve) => setTimeout(resolve, selectionDelayFor(contact)))
+    const liveContact = contactById(contact.id)
+    if (!liveContact) return false
+    return deliverIncomingPayload(liveContact, payload, preview)
+  } finally {
+    setSelectingFor(contact, false)
+  }
 }
 
 function deliverIncomingPayload(contact, payload, preview) {
@@ -1119,14 +1547,42 @@ function deliverIncomingPayload(contact, payload, preview) {
   return message
 }
 
+function scheduleReadReceipt(contact) {
+  if (!contact) return
+  const timer = setTimeout(() => {
+    replyTimers.delete(timer)
+    const liveContact = contactById(contact.id)
+    if (!liveContact) return
+    const messages = liveContact.messages || []
+    const lastMessage = messages[messages.length - 1]
+    if (!lastMessage || lastMessage.from !== 'me') return
+    liveContact.messages.push({
+      id: makeId('read-receipt'),
+      from: 'system',
+      type: 'readReceipt',
+      text: `${contactDisplayName(liveContact)}已读不回`,
+      time: nowHM(),
+      createdAt: Date.now(),
+      read: true,
+    })
+    saveContacts()
+  }, 900 + Math.random() * 1300)
+  replyTimers.add(timer)
+}
+
 async function scheduleCardReply(contactId) {
   const contact = contactById(contactId)
   if (!contact) return false
   const auto = autoForContact(contact)
-  if (chancePercent(auto.noReplyChance, 0, auto.noReplyChanceRandom)) return false
+  if (chancePercent(auto.noReplyChance, 0, auto.noReplyChanceRandom)) {
+    scheduleReadReceipt(contact)
+    return false
+  }
+  // 表情包、照片、语音等特殊回复也要在筛选阶段就显示输入提示。
+  setSelectingFor(contact, true)
 
   if (chancePercent(auto.touchChance, 5, auto.touchChanceRandom)) {
-    return deliverIncomingPayload(
+    return deliverSpecialReply(
       contact,
       { type: 'nudge', text: randomIncomingNudge(contactDisplayName(contact)) },
       '拍了拍你'
@@ -1138,7 +1594,7 @@ async function scheduleCardReply(contactId) {
       if (!stickerState.loaded) await loadStickerLibrary()
       const sticker = randomStickerForContact(contact.id)
       if (sticker?.src) {
-        return deliverIncomingPayload(contact, { type: 'sticker', src: sticker.src, text: '[表情包]' }, '[表情包]')
+        return deliverSpecialReply(contact, { type: 'sticker', src: sticker.src, text: '[表情包]' }, '[表情包]')
       }
     } catch (e) {
       /* 表情包不可用时继续使用文字回复 */
@@ -1148,7 +1604,7 @@ async function scheduleCardReply(contactId) {
   if (chancePercent(settings.audioGuaranteeChance, 0, settings.audioGuaranteeChanceRandom)) {
     const maxSeconds = Math.max(3, Math.min(60, Math.round(Number(settings.audioCardWeight) || 5)))
     const duration = 3 + Math.floor(Math.random() * maxSeconds)
-    return deliverIncomingPayload(
+    return deliverSpecialReply(
       contact,
       { type: 'voice', text: `语音 ${formatCallDuration(duration)}`, duration },
       '[语音]'
@@ -1159,7 +1615,7 @@ async function scheduleCardReply(contactId) {
       const photos = await listPhotos()
       if (photos.length) {
         const photo = photos[Math.floor(Math.random() * photos.length)]
-        return deliverIncomingPayload(contact, { type: 'photo', src: photo.src, text: '' }, '[照片]')
+        return deliverSpecialReply(contact, { type: 'photo', src: photo.src, text: '' }, '[照片]')
       }
     } catch (e) {
       /* 相册不可用时继续使用文字回复 */
@@ -1167,12 +1623,27 @@ async function scheduleCardReply(contactId) {
   }
 
   let texts = []
+  let sourceLabels = []
+  let dictionary = false
   if (auto.dictionaryEnabled === true && chancePercent(auto.dictionaryChance, 25, auto.dictionaryChanceRandom)) {
-    texts = dictionaryReplyTexts(auto)
+    const entries = dictionaryReplyEntries(auto)
+    texts = entries.map((entry) => entry.text)
+    sourceLabels = entries.map((entry) => entry.labels)
+    dictionary = texts.length > 0
   }
-  if (!texts.length) texts = drawReplyCards(contact)
-  if (!texts.length) return false
-  deliverIncomingCards(contactId, decorateReplyTexts(texts, auto))
+  if (!texts.length) {
+    const batches = drawReplyBatches(contact, {
+      messageMin: auto.replyMessageMin,
+      messageMax: auto.replyMessageMax,
+    })
+    texts = batches.map((batch) => batch.text)
+    sourceLabels = batches.map((batch) => batch.sourceLabels)
+  }
+  if (!texts.length) {
+    setSelectingFor(contact, false)
+    return false
+  }
+  deliverIncomingCards(contactId, decorateReplyTexts(texts, auto), { sourceLabels, dictionary })
   return true
 }
 
@@ -1184,7 +1655,10 @@ function deliverGroupCards(groupId, memberId, texts, options = {}) {
     return
   }
 
-  queueCardSequence(group, member, texts, options, (liveGroup, text) => {
+  const sourceLabels = Array.isArray(options.sourceLabels)
+    ? options.sourceLabels
+    : texts.map((text) => sourceLabelsForCard(member, text))
+  queueCardSequence(group, member, texts, options, (liveGroup, text, index) => {
     const reading = isReading(liveGroup)
     const auto = autoForContact(member)
     liveGroup.messages.push({
@@ -1196,11 +1670,17 @@ function deliverGroupCards(groupId, memberId, texts, options = {}) {
       createdAt: Date.now(),
       read: reading,
       quote: randomQuoteFrom(liveGroup, auto.quoteChance, auto.quoteChanceRandom),
+      sourceLabels: uniqueLabels(sourceLabels[index] || []),
+      sourceGroup: (sourceLabels[index] || []).at(-1) || '',
+      dictionary: options.dictionary === true,
       senderId: member.id,
       senderName: contactDisplayName(member),
       senderAvatar: member.avatar,
       senderAvatarImage: member.avatarImage,
       senderAvatarFrame: member.avatarFrame,
+      senderAvatarFrameOffsetX: member.avatarFrameOffsetX,
+      senderAvatarFrameOffsetY: member.avatarFrameOffsetY,
+      senderAvatarFrameScale: member.avatarFrameScale,
       senderColor: member.color,
     })
     saveGroups()
@@ -1209,28 +1689,126 @@ function deliverGroupCards(groupId, memberId, texts, options = {}) {
   })
 }
 
+function scheduleGroupReadReceipt(groupId, memberId) {
+  const member = contactById(memberId)
+  const group = groupById(groupId)
+  if (!member || !group) return
+  const timer = setTimeout(() => {
+    replyTimers.delete(timer)
+    const liveGroup = groupById(groupId)
+    const liveMember = contactById(memberId)
+    if (!liveGroup || !liveMember) return
+    const lastMessage = liveGroup.messages[liveGroup.messages.length - 1]
+    if (!lastMessage || lastMessage.from !== 'me') return
+    const text = `${contactDisplayName(liveMember)}已读不回`
+    liveGroup.messages.push({
+      id: makeId('group-read-receipt'),
+      from: 'system',
+      type: 'readReceipt',
+      text,
+      senderId: liveMember.id,
+      senderName: contactDisplayName(liveMember),
+      time: nowHM(),
+      createdAt: Date.now(),
+      read: true,
+    })
+    saveGroups()
+    refreshUnread()
+    groupNotice(liveGroup, text)
+  }, 900 + Math.random() * 1300)
+  replyTimers.add(timer)
+}
+
+function scheduleMemberInitiatedGroupCall(group, member, auto) {
+  if (!group || !member || auto?.callsAllowed === false) return
+  const chance = Number(auto?.proactiveCallChance ?? settings.contactAutoSettings?.[member.id]?.proactiveCallChance ?? 0)
+  if (!chancePercent(chance, 0, auto?.proactiveCallChanceRandom)) return
+  const timer = setTimeout(() => {
+    replyTimers.delete(timer)
+    if (chatState.call) return
+    const kind = Math.random() < 0.5 ? 'video' : 'voice'
+    startIncomingGroupCall(group.id, member.id, kind)
+  }, 4200 + Math.random() * 3600)
+  replyTimers.add(timer)
+}
 function scheduleGroupReply(groupId) {
   const group = groupById(groupId)
   const members = groupMembers(group)
-  if (!group || !members.length) return
-  const member = members[Math.floor(Math.random() * members.length)]
-  const auto = autoForContact(member)
-  if (!chancePercent(auto.groupReplyChance, 100, auto.groupReplyChanceRandom)) return
-  let texts
-  if (auto.groupDictionaryEnabled === true && DICTIONARY_TEXT_CARDS.length) {
-    const count = randomCount(auto.groupReplyCardMin, auto.groupReplyCardMax, 1, 1)
-    texts = Array.from(
-      { length: count },
-      () => DICTIONARY_TEXT_CARDS[Math.floor(Math.random() * DICTIONARY_TEXT_CARDS.length)]
-    )
-  } else {
-    texts = drawReplyCards(member, {
-      forceRange: true,
-      min: auto.groupReplyCardMin,
-      max: auto.groupReplyCardMax,
-    })
+  if (!group || !members.length) return 0
+  const responders = members.filter((member) => {
+    const auto = autoForContact(member)
+    return chancePercent(auto.groupReplyChance, 100, auto.groupReplyChanceRandom)
+  }).sort(() => Math.random() - 0.5)
+  for (const member of responders) {
+    const auto = autoForContact(member)
+    if (chancePercent(auto.noReplyChance, 0, auto.noReplyChanceRandom)) {
+      scheduleGroupReadReceipt(group.id, member.id)
+      continue
+    }
+    let texts = []
+    let sourceLabels = []
+    let dictionary = false
+    const groupDictionaryEntries = dictionaryEntriesFor()
+    if (auto.groupDictionaryEnabled === true && groupDictionaryEntries.length) {
+      const count = randomCount(auto.groupReplyCardMin, auto.groupReplyCardMax, 1, 1)
+      const entries = Array.from(
+        { length: count },
+        () => groupDictionaryEntries[Math.floor(Math.random() * groupDictionaryEntries.length)]
+      )
+      texts = entries.map((entry) => entry.text)
+      sourceLabels = entries.map((entry) => uniqueLabels(['拼词', entry.categoryLabel, entry.groupName]))
+      dictionary = true
+    } else {
+      const batches = drawReplyBatches(member, {
+        messageMin: auto.groupReplyCardMin,
+        messageMax: auto.groupReplyCardMax,
+      })
+      texts = batches.map((batch) => batch.text)
+      sourceLabels = batches.map((batch) => batch.sourceLabels)
+    }
+    deliverGroupCards(group.id, member.id, texts, { sourceLabels, dictionary })
+    scheduleMemberInitiatedGroupCall(group, member, auto)
   }
-  deliverGroupCards(group.id, member.id, texts)
+  return responders.length
+}
+
+export function sendGroupMemberMessage(groupId, memberId, text, options = {}) {
+  const group = groupById(groupId)
+  const member = contactById(memberId)
+  const clean = String(text || '').trim()
+  if (!group || !member || !clean) return false
+  const reading = isReading(group)
+  const payload = { ...(options.payload || {}) }
+  const messageType = options.type || payload.type || 'text'
+  if (messageType === 'transfer' || messageType === 'redpacket') {
+    payload.transferRecipientId = 'me'
+    payload.transferRecipientName = '我'
+    payload.transferRecipientKind = 'user'
+  }
+  group.messages.push({
+    id: makeId('gr-tool'),
+    from: 'other',
+    type: messageType,
+    text: clean,
+    time: nowHM(),
+    createdAt: Date.now(),
+    read: reading,
+    sourceLabels: uniqueLabels(options.sourceLabels || []),
+    senderId: member.id,
+    senderName: contactDisplayName(member),
+    senderAvatar: member.avatar,
+    senderAvatarImage: member.avatarImage,
+    senderAvatarFrame: member.avatarFrame,
+    senderAvatarFrameOffsetX: member.avatarFrameOffsetX,
+    senderAvatarFrameOffsetY: member.avatarFrameOffsetY,
+    senderAvatarFrameScale: member.avatarFrameScale,
+    senderColor: member.color,
+    ...payload,
+  })
+  saveGroups()
+  refreshUnread()
+  if (!reading) announce(group, `${contactDisplayName(member)}：${clean}`)
+  return true
 }
 export function triggerProactiveForActiveChat() {
   if (chatState.activeGroupId) {
@@ -1238,7 +1816,10 @@ export function triggerProactiveForActiveChat() {
     const members = groupMembers(group)
     if (!group || !members.length) return false
     const member = members[Math.floor(Math.random() * members.length)]
-    deliverGroupCards(group.id, member.id, drawReplyCards(member))
+    const batches = drawReplyBatches(member)
+    deliverGroupCards(group.id, member.id, batches.map((batch) => batch.text), {
+      sourceLabels: batches.map((batch) => batch.sourceLabels),
+    })
     return true
   }
   const contact = contactById(chatState.activeId)
@@ -1433,6 +2014,16 @@ export function updateGroup(id, patch) {
   return current
 }
 
+export function deleteGroup(id) {
+  const group = groupById(id)
+  if (!group) return false
+  if (chatState.call?.groupId === id) finishGroupCall('completed')
+  chatState.groups = chatState.groups.filter((item) => item.id !== id)
+  if (chatState.activeGroupId === id) chatState.activeGroupId = null
+  saveGroups()
+  refreshUnread()
+  return true
+}
 export function conversationPinnedCount() {
   return (
     chatState.contacts.filter((contact) => contact.pinned).length +
@@ -1467,6 +2058,7 @@ export function createContact(data = {}) {
       note: 'TA',
       avatar: 'T',
       color: 'var(--theme-primary)',
+      avatarFrameSkin: 'none',
       messages: [],
       ...data,
     },
@@ -1492,8 +2084,9 @@ export function updateContact(id, patch) {
 }
 
 export function saveChatDataNow() {
-  saveContacts()
-  saveGroups()
+  flushChatStorage()
+  writeContactsNow()
+  writeGroupsNow()
   refreshUnread()
 }
 
@@ -1682,6 +2275,9 @@ export function startChatEngine() {
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', onVisibilityChange)
   }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', flushChatStorage)
+  }
 }
 
 export function stopChatEngine() {
@@ -1699,10 +2295,14 @@ export function stopChatEngine() {
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pagehide', flushChatStorage)
+  }
 }
 
 function onVisibilityChange() {
   syncCallSeconds()
+  if (document.visibilityState === 'hidden') flushChatStorage()
   if (document.visibilityState !== 'visible' || store.page !== 'sms') return
   if (chatState.activeId) markRead(chatState.activeId)
   if (chatState.activeGroupId) {

@@ -1,0 +1,17 @@
+export const HOME_APP_ITEMS = [
+  { id: 'album', label: '相册', glyph: 'album' },
+  { id: 'journey', label: '日历', glyph: 'journey' },
+  { id: 'music', label: '音乐', glyph: 'music' },
+  { id: 'sms', label: '聊天', glyph: 'sms' },
+  { id: 'moments', label: '朋友圈', glyph: 'moments' },
+  { id: 'stats', label: '消息统计', glyph: 'stats' },
+  { id: 'mail', label: '信箱', glyph: 'mail' },
+  { id: 'pomodoro', label: '番茄钟', glyph: 'pomodoro' },
+  { id: 'tarot', label: '塔罗牌', glyph: 'tarot' },
+  { id: 'questionnaire', label: '问卷', glyph: 'questionnaire' },
+  { id: 'period', label: '经期记录', glyph: 'period' },
+  { id: 'accounting', label: '记账', glyph: 'accounting' },
+  { id: 'memory', label: '纪念日', glyph: 'heart' },
+  { id: 'avatarLib', label: '头像库', glyph: 'user' },
+  { id: 'wishlist', label: '我想要这个！', glyph: 'wishlist' },
+]

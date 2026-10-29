@@ -4,15 +4,17 @@ import { chatState, contactDisplayName } from '../chat'
 
 const contacts = computed(() => chatState.contacts)
 const groups = computed(() => chatState.groups)
+const conversations = computed(() => [
+  ...contacts.value.map((item) => ({ id: item.id, kind: 'contact', name: contactDisplayName(item), avatar: item.avatar, avatarImage: item.avatarImage, color: item.color, messages: item.messages || [] })),
+  ...groups.value.map((item) => ({ id: item.id, kind: 'group', name: item.name || '群聊', avatar: item.avatar || '群', avatarImage: item.avatarImage || '', color: item.color, messages: item.messages || [] })),
+])
 
-const total = computed(() =>
-  contacts.value.reduce((sum, contact) => sum + (contact.messages?.length || 0), 0)
-)
+const total = computed(() => conversations.value.reduce((sum, item) => sum + item.messages.length, 0))
 
 const types = computed(() => {
   const counts = { text: 0, transfer: 0, redpacket: 0, photo: 0, call: 0, other: 0 }
-  for (const contact of contacts.value) {
-    for (const message of contact.messages || []) {
+  for (const conversation of conversations.value) {
+    for (const message of conversation.messages) {
       const type = message.type || 'text'
       if (type in counts) counts[type] += 1
       else counts.other += 1
@@ -20,10 +22,7 @@ const types = computed(() => {
   }
   return counts
 })
-
-const max = computed(() =>
-  Math.max(1, ...contacts.value.map((contact) => contact.messages?.length || 0))
-)
+const max = computed(() => Math.max(1, ...conversations.value.map((item) => item.messages.length)))
 
 const chips = computed(() => [
   { label: '文字', value: types.value.text },
@@ -54,40 +53,40 @@ const overallCardLeaderboard = computed(() => {
     maxCount: items[0]?.count || 1,
   }
 })
-const textLeaderboards = computed(() =>
-  contacts.value
-    .map((contact) => {
-      const counts = new Map()
-      for (const message of contact.messages || []) {
-        if (message.from !== 'other' || message.recalled) continue
-        if (message.type && message.type !== 'text') continue
-        const text = String(message.text || '').trim()
-        if (!text) continue
-        counts.set(text, (counts.get(text) || 0) + 1)
-      }
-      const items = [...counts.entries()]
-        .map(([text, count]) => ({ text, count }))
-        .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, 'zh-CN'))
-        .slice(0, 10)
-      return {
-        id: contact.id,
-        name: contactDisplayName(contact),
-        avatar: contact.avatar || contact.note?.slice(0, 1) || 'T',
-        avatarImage: contact.avatarImage || '',
-        color: contact.color || 'var(--theme-primary)',
-        items,
-        maxCount: items[0]?.count || 1,
-      }
-    })
-    .filter((contact) => contact.items.length)
-)
+const textLeaderboards = computed(() => {
+  const maps = new Map(contacts.value.map((contact) => [contact.id, new Map()]))
+  const addText = (contactId, text) => {
+    if (!text || !maps.has(contactId)) return
+    const counts = maps.get(contactId)
+    counts.set(text, (counts.get(text) || 0) + 1)
+  }
+  for (const contact of contacts.value) {
+    for (const message of contact.messages || []) {
+      if (message.from !== 'other' || message.recalled) continue
+      if (message.type && message.type !== 'text') continue
+      addText(contact.id, String(message.text || '').trim())
+    }
+  }
+  for (const group of groups.value) {
+    for (const message of group.messages || []) {
+      if (message.from !== 'other' || message.recalled || !message.senderId) continue
+      if (message.type && message.type !== 'text') continue
+      addText(message.senderId, String(message.text || '').trim())
+    }
+  }
+  return contacts.value.map((contact) => {
+    const counts = maps.get(contact.id) || new Map()
+    const items = [...counts.entries()].map(([text, count]) => ({ text, count })).sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, 'zh-CN')).slice(0, 10)
+    return { id: contact.id, name: contactDisplayName(contact), avatar: contact.avatar || contact.note?.slice(0, 1) || 'T', avatarImage: contact.avatarImage || '', color: contact.color || 'var(--theme-primary)', items, maxCount: items[0]?.count || 1 }
+  }).filter((contact) => contact.items.length)
+})
 </script>
 
 <template>
   <section class="stats">
     <div class="echoes-character-card hero">
       <div class="hero-num">{{ total }}</div>
-      <div class="hero-label">条消息 · {{ contacts.length }} 个会话</div>
+      <div class="hero-label">条消息 · {{ contacts.length }} 个联系人 · {{ groups.length }} 个群聊</div>
     </div>
 
     <div class="chips">
@@ -99,23 +98,23 @@ const textLeaderboards = computed(() =>
 
     <div class="echoes-character-card list">
       <div class="list-head">按会话</div>
-      <div v-for="contact in contacts" :key="contact.id" class="row">
-        <span class="avatar" :style="{ background: contact.color }">
-          <img v-if="contact.avatarImage" :src="contact.avatarImage" alt="" />
-          <template v-else>{{ contact.avatar }}</template>
+      <div v-for="conversation in conversations" :key="conversation.kind + conversation.id" class="row">
+        <span class="avatar" :style="{ background: conversation.color }">
+          <img v-if="conversation.avatarImage" :src="conversation.avatarImage" alt="" />
+          <template v-else>{{ conversation.avatar }}</template>
         </span>
         <div class="row-main">
           <div class="row-top">
-            <span class="name">{{ contactDisplayName(contact) }}</span>
-            <span class="count">{{ contact.messages?.length || 0 }}</span>
+            <span class="name">{{ conversation.name }}</span>
+            <span class="count">{{ conversation.messages.length }}</span>
           </div>
           <div class="bar">
-            <i :style="{ width: Math.round(((contact.messages?.length || 0) / max) * 100) + '%' }"></i>
+            <i :style="{ width: Math.round((conversation.messages.length / max) * 100) + '%' }"></i>
           </div>
         </div>
       </div>
 
-      <div v-if="!contacts.length" class="empty">还没有消息数据。</div>
+      <div v-if="!conversations.length" class="empty">还没有消息数据。</div>
     </div>
 
     <div class="echoes-character-card text-stats">

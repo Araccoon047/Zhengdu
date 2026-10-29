@@ -5,16 +5,16 @@
    四角贴纸用 CSS 爱心装饰替代外链贴纸图（外链不可靠）。
    ========================================================= */
 
-/* ---------- 隐藏 echoes 默认的海豹角落装饰 ---------- */
-html[data-site-theme="peach"] .echoes-bubble-user::before,
-html[data-site-theme="peach"] .echoes-bubble-other::before {
+/* ---------- 仅默认气泡皮肤使用芝芝桃气泡；其他气泡皮肤可自由搭配 ---------- */
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-user::before,
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-other::before {
   display: none !important;
   content: none !important;
 }
 
 /* ---------- 气泡：粉 / 黄 + outline 描边 + 白色内描边 ---------- */
-html[data-site-theme="peach"] .echoes-bubble-user,
-html[data-site-theme="peach"] .echoes-bubble-other {
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-user,
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-other {
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -25,17 +25,17 @@ html[data-site-theme="peach"] .echoes-bubble-other {
   overflow: visible !important;
   transform: translateY(21px) !important;
 }
-html[data-site-theme="peach"] .echoes-bubble-user {
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-user {
   background: #ffdde2 !important;
   color: #6b5b5b !important;
 }
-html[data-site-theme="peach"] .echoes-bubble-other {
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-other {
   background: #fff9e5 !important;
   color: #6b5b5b !important;
 }
 
 /* ---------- 四角爱心装饰（CSS 替代外链贴纸图） ---------- */
-html[data-site-theme="peach"] .echoes-bubble-user::after {
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-user::after {
   content: "♥";
   display: block !important;
   position: absolute !important;
@@ -51,7 +51,7 @@ html[data-site-theme="peach"] .echoes-bubble-user::after {
   pointer-events: none;
   z-index: 3;
 }
-html[data-site-theme="peach"] .echoes-bubble-other::after {
+html[data-site-theme="peach"][data-bubble-skin="default"] .echoes-bubble-other::after {
   content: "♥";
   display: block !important;
   position: absolute !important;

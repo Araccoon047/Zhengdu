@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { settings } from '../settings'
 import { store, go } from '../store'
 import { cropImage } from '../image-crop'
+import { imageFileToOriginalDataUrl } from '../image-utils'
+import { avatarFrameStyle } from '../avatar-frame-style'
 import { backgroundLayerStyle } from '../background-style'
 import {
   chatState,
@@ -14,10 +16,12 @@ import {
 } from '../chat'
 import ContactEditorDialog from '../components/ContactEditorDialog.vue'
 import StickerManager from '../components/StickerManager.vue'
+import WelcomeNoticeDialog from '../components/WelcomeNoticeDialog.vue'
 
 const contacts = computed(() => chatState.contacts)
 const currentContact = computed(() => primaryContact())
 const managerOpen = ref(false)
+const welcomeNoticeOpen = ref(false)
 const editorOpen = ref(false)
 const editingContact = ref(null)
 const expandedRelated = ref('')
@@ -83,18 +87,15 @@ async function onUserAvatarFrame(event) {
   event.target.value = ''
   if (!file) return
   try {
-    const result = await cropImage(file, {
-      title: '裁剪我的头像框',
-      aspectRatio: 1,
-      lockAspect: true,
-      shape: 'circle',
-      transparent: true,
-      mimeType: 'image/png',
-      maxSide: 480,
-    })
-    if (result) userDraft.value.avatarFrame = result
+    const result = await imageFileToOriginalDataUrl(file)
+    if (result) {
+      userDraft.value.avatarFrame = result
+      settings.userAvatarFrameOffsetX = 0
+      settings.userAvatarFrameOffsetY = 0
+      settings.userAvatarFrameScale = 1
+    }
   } catch (e) {
-    imageError.value = e.message || '头像框处理失败'
+    imageError.value = e.message || '头像框上传失败'
   }
 }
 
@@ -165,7 +166,8 @@ async function pickRelatedBackground(event) {
   try {
     const result = await cropImage(file, {
       title: '裁剪聊天背景',
-      aspectRatio: 16 / 9,
+      aspectRatio: 9 / 16,
+      lockAspect: true,
       shape: 'rect',
       maxSide: 1600,
       quality: 0.84,
@@ -233,7 +235,7 @@ function initials(contact) {
       <span class="profile-avatar user-avatar">
         <img v-if="settings.anniversaryAvatarB" :src="settings.anniversaryAvatarB" alt="" />
         <template v-else>我</template>
-        <img v-if="settings.userAvatarFrame" class="avatar-frame" :src="settings.userAvatarFrame" alt="" />
+        <img v-if="settings.userAvatarFrame" class="avatar-frame" :src="settings.userAvatarFrame" :style="avatarFrameStyle({ avatarFrameOffsetX: settings.userAvatarFrameOffsetX, avatarFrameOffsetY: settings.userAvatarFrameOffsetY, avatarFrameScale: settings.userAvatarFrameScale })" alt="" />
       </span>
       <span class="profile-copy">
         <strong>我</strong>
@@ -247,7 +249,7 @@ function initials(contact) {
       <span class="profile-avatar" :style="{ background: currentContact?.color || 'var(--theme-primary)' }">
         <img v-if="currentContact?.avatarImage" :src="currentContact.avatarImage" alt="" />
         <template v-else>{{ initials(currentContact) }}</template>
-        <img v-if="currentContact?.avatarFrame" class="avatar-frame" :src="currentContact.avatarFrame" alt="" />
+        <img v-if="currentContact?.avatarFrame" class="avatar-frame" :src="currentContact.avatarFrame" :style="avatarFrameStyle(currentContact)" alt="" />
       </span>
       <span class="profile-copy">
         <strong>TA</strong>
@@ -358,9 +360,12 @@ function initials(contact) {
       </summary>
       <div class="profile-about-body">
         <p><strong>作者</strong><span>南岭</span></p>
-        <p><strong>当前版本</strong><span>Zhengdu1.0</span></p>
+        <p><strong>当前版本</strong><span>Zhengdu2.0.4</span></p>
+        <button class="about-notice-button" type="button" @click="welcomeNoticeOpen = true">查看公告</button>
       </div>
     </details>
+
+    <WelcomeNoticeDialog v-if="welcomeNoticeOpen" @close="welcomeNoticeOpen = false" />
 
     <teleport to="body">
       <transition name="dialog-fade">
@@ -377,10 +382,10 @@ function initials(contact) {
             <div v-if="!contacts.length" class="manager-empty">还没有联系人</div>
 
             <div v-for="contact in contacts" :key="contact.id" class="manager-row">
-              <span class="manager-avatar" :style="{ background: contact.color }">
+              <span class="manager-avatar echoes-avatar-other" :data-avatar-frame-skin-id="contact.avatarFrameSkin || 'none'" :style="{ background: contact.color }">
                 <img v-if="contact.avatarImage" :src="contact.avatarImage" alt="" />
                 <template v-else>{{ initials(contact) }}</template>
-                <img v-if="contact.avatarFrame" class="avatar-frame" :src="contact.avatarFrame" alt="" />
+                <img v-if="contact.avatarFrame" class="avatar-frame" :src="contact.avatarFrame" :style="avatarFrameStyle(contact)" alt="" />
               </span>
               <span class="manager-copy">
                 <strong>{{ contactDisplayName(contact) }}</strong>
@@ -416,7 +421,7 @@ function initials(contact) {
               <button class="profile-avatar user-edit-avatar" type="button" @click="pickUserAvatar">
                 <img v-if="userDraft.avatar" :src="userDraft.avatar" alt="" />
                 <template v-else>+</template>
-                <img v-if="userDraft.avatarFrame" class="avatar-frame" :src="userDraft.avatarFrame" alt="" />
+                <img v-if="userDraft.avatarFrame" class="avatar-frame" :src="userDraft.avatarFrame" :style="avatarFrameStyle(settings)" alt="" />
               </button>
               <input ref="userAvatarInput" class="hidden-file" type="file" accept="image/*" @change="onUserAvatar" />
               <div class="user-avatar-tip">点击头像上传图片，使用圆形裁剪框</div>
@@ -467,6 +472,7 @@ function initials(contact) {
 .profile-about-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--theme-border-soft); }
 .profile-about-body p { margin: 0; padding-top: 10px; display: flex; align-items: center; justify-content: space-between; color: var(--theme-muted); font-size: 10.5px; }
 .profile-about-body strong { color: var(--theme-text); font-size: 10.5px; }
+.about-notice-button { width: 100%; margin-top: 4px; padding: 9px 12px; border: 0; border-radius: 10px; background: var(--theme-soft); color: var(--theme-primary); font: inherit; font-size: 10.5px; font-weight: 800; cursor: pointer; }
 .profile {
   max-width: 560px;
   margin: 0 auto;
@@ -520,14 +526,14 @@ function initials(contact) {
   top: 50%;
   left: 50%;
   z-index: 3;
-  width: 112%;
-  height: 112%;
+  width: 120%;
+  height: 120%;
   max-width: none;
   object-fit: contain;
   border-radius: 0;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  filter: drop-shadow(0 2px 5px rgba(var(--theme-primary-rgb), 0.14));
+  filter: none;
 }
 
 .profile-copy {

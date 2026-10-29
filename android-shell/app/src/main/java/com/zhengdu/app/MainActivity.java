@@ -5,12 +5,12 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.provider.Settings;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -23,7 +23,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
+
 import android.widget.Toast;
 
 import java.io.ByteArrayInputStream;
@@ -42,17 +42,21 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private FrameLayout rootView;
-    private ImageView splashView;
-    private long splashShownAt;
+
     private ValueCallback<Uri[]> pendingFileCallback;
     private PermissionRequest pendingWebPermission;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setStatusBarColor(0xFFF7F8FA);
+        getWindow().setNavigationBarColor(0xFFF7F8FA);
+        if (Build.VERSION.SDK_INT >= 23) {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        }
         createWebView();
         webView.loadUrl(HOME_URL);
         webView.postDelayed(this::requestAppPermissions, 900);
-        webView.postDelayed(this::dismissSplash, 900);
     }
 
     private void createWebView() {
@@ -65,14 +69,7 @@ public class MainActivity extends Activity {
         rootView = new FrameLayout(this);
         rootView.setBackgroundColor(0xFFF7F8FA);
         rootView.addView(webView);
-        splashView = new ImageView(this);
-        splashView.setImageResource(R.mipmap.ic_launcher);
-        splashView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        splashView.setScaleX(0.9f);
-        splashView.setScaleY(0.9f);
-        FrameLayout.LayoutParams splashParams = new FrameLayout.LayoutParams(dp(88), dp(88), Gravity.CENTER);
-        rootView.addView(splashView, splashParams);
-        splashShownAt = SystemClock.uptimeMillis();
+
         setContentView(rootView);
 
         WebSettings settings = webView.getSettings();
@@ -106,11 +103,6 @@ public class MainActivity extends Activity {
                 WebResourceResponse local = serveBundledAsset(request.getUrl());
                 return local != null ? local : super.shouldInterceptRequest(view, request);
             }
-            @Override
-            public void onPageCommitVisible(WebView view, String url) {
-                super.onPageCommitVisible(view, url);
-                dismissSplash();
-            }
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
@@ -133,6 +125,14 @@ public class MainActivity extends Activity {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (ActivityNotFoundException error) {
+                    if (intent.getType() != null && intent.getType().startsWith("image/")) {
+                        try {
+                            startActivityForResult(buildImageChooserFallbackIntent(params), FILE_CHOOSER_REQUEST);
+                            return true;
+                        } catch (ActivityNotFoundException ignored) {
+                            // Fall through to the visible error below.
+                        }
+                    }
                     pendingFileCallback = null;
                     toast("当前手机没有可用的文件选择器");
                     return false;
@@ -195,26 +195,6 @@ public class MainActivity extends Activity {
         if (lower.endsWith(".ogg")) return "audio/ogg";
         return "application/octet-stream";
     }
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private void dismissSplash() {
-        final ImageView view = splashView;
-        if (view == null) return;
-        splashView = null;
-        long elapsed = SystemClock.uptimeMillis() - splashShownAt;
-        long delay = Math.max(0, 360 - elapsed);
-        view.postDelayed(() -> view.animate()
-                .alpha(0f)
-                .scaleX(1.04f)
-                .scaleY(1.04f)
-                .setDuration(180)
-                .withEndAction(() -> {
-                    if (rootView != null) rootView.removeView(view);
-                })
-                .start(), delay);
-    }
     private boolean handleUri(Uri uri) {
         if (uri == null) return false;
         String scheme = uri.getScheme();
@@ -241,23 +221,59 @@ public class MainActivity extends Activity {
     }
 
     private Intent buildFileChooserIntent(WebChromeClient.FileChooserParams params) {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        intent.setType("*/*");
-
         String[] acceptTypes = params == null ? null : params.getAcceptTypes();
+        List<String> mimeTypes = new ArrayList<>();
+        boolean imageOnly = false;
         if (acceptTypes != null) {
-            List<String> mimeTypes = new ArrayList<>();
             for (String type : acceptTypes) {
                 if (type != null && type.contains("/") && !mimeTypes.contains(type)) {
                     mimeTypes.add(type);
                 }
             }
-            if (!mimeTypes.isEmpty()) {
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toArray(new String[0]));
+            imageOnly = !mimeTypes.isEmpty();
+            for (String type : mimeTypes) {
+                if (!type.startsWith("image/")) {
+                    imageOnly = false;
+                    break;
+                }
             }
         }
+
+        Intent intent;
+        if (imageOnly) {
+            if (Build.VERSION.SDK_INT >= 33) {
+                intent = new Intent("android.provider.action.PICK_IMAGES");
+            } else {
+                intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+            }
+            intent.setType("image/*");
+        } else {
+            intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+        }
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Intent.ACTION_OPEN_DOCUMENT.equals(intent.getAction())) {
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        }
+        if (!imageOnly && !mimeTypes.isEmpty()) {
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toArray(new String[0]));
+        }
+        if (params != null && params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            if (Build.VERSION.SDK_INT >= 33 && "android.provider.action.PICK_IMAGES".equals(intent.getAction())) {
+                intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100);
+            }
+        }
+        return intent;
+    }
+
+    private Intent buildImageChooserFallbackIntent(WebChromeClient.FileChooserParams params) {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if (params != null && params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
             intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         }
@@ -388,10 +404,18 @@ public class MainActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        if (webView == null) {
+            super.onBackPressed();
+            return;
+        }
+        if (webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        webView.evaluateJavascript("(window.__zhengduNativeBack && window.__zhengduNativeBack()) === true", value -> {
+            if (!"true".equals(value)) finish();
+        });
     }
-
     @Override
     protected void onDestroy() {
         if (webView != null) {

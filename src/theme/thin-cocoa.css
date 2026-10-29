@@ -1,0 +1,223 @@
+/* Thin Cocoa theme — adapted from the supplied echoes│薄巧系 reference. */
+html[data-site-theme="thinCocoa"] {
+  --thin-mint: #E1F6F1;
+  --thin-mint-glass: rgba(225, 246, 241, 0.88);
+  --thin-choco: #B5A198;
+  --thin-dark: #6E584F;
+  --thin-card: #F8FCFB;
+}
+
+html[data-site-theme="thinCocoa"] .echoes-app-shell.echoes-app {
+  background-color: #F4FAF8 !important;
+  background-image: url("../assets/theme/thin-cocoa/wallpaper.jpg") !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+}
+html[data-site-theme="thinCocoa"] .echoes-app-overlay,
+html[data-site-theme="thinCocoa"] .echoes-app-glow {
+  background: transparent !important;
+}
+html[data-site-theme="thinCocoa"] .app-topbar {
+  border-bottom: 2px solid var(--thin-choco);
+  background: var(--thin-mint-glass);
+}
+html[data-site-theme="thinCocoa"] .app-topbar h1 {
+  color: var(--thin-dark);
+}
+html[data-site-theme="thinCocoa"] .global-dock {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="thinCocoa"] .dock-tilt {
+  border: 0 !important;
+  border-radius: 22px !important;
+  background: var(--thin-mint-glass) !important;
+  box-shadow: 0 4px 15px rgba(110, 88, 79, 0.16) !important;
+}
+html[data-site-theme="thinCocoa"] .dock-button,
+html[data-site-theme="thinCocoa"] .dock-label,
+html[data-site-theme="thinCocoa"] .dock-icon {
+  color: var(--thin-dark) !important;
+}
+html[data-site-theme="thinCocoa"] .echoes-character-card,
+html[data-site-theme="thinCocoa"] .setting-group,
+html[data-site-theme="thinCocoa"] .post-card,
+html[data-site-theme="thinCocoa"] .music-panel,
+html[data-site-theme="thinCocoa"] .album,
+html[data-site-theme="thinCocoa"] .qn-qcard {
+  background: var(--thin-card) !important;
+  border-color: #D8CFB0 !important;
+  box-shadow: 0 4px 12px rgba(181, 161, 152, 0.14) !important;
+}
+html[data-site-theme="thinCocoa"] .settings .setting-group,
+html[data-site-theme="thinCocoa"] .settings-subpage {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="thinCocoa"] button.primary,
+html[data-site-theme="thinCocoa"] .save-settings-button,
+html[data-site-theme="thinCocoa"] .tool-primary,
+html[data-site-theme="thinCocoa"] .music-tool.active {
+  background: var(--thin-choco) !important;
+  border-color: var(--thin-mint) !important;
+  color: #fff !important;
+}
+
+html[data-site-theme="thinCocoa"] .chat-head {
+  background: var(--thin-mint-glass) !important;
+  border-bottom: 2px solid var(--thin-choco);
+}
+html[data-site-theme="thinCocoa"] .chat-head::after {
+  content: "Thin choco ≤❄️·+";
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  transform: translateX(-50%);
+  color: var(--thin-dark);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  opacity: 0.72;
+  white-space: nowrap;
+  pointer-events: none;
+}
+html[data-site-theme="thinCocoa"] .chat-input-area {
+  position: relative;
+  background: var(--thin-mint) !important;
+  border-top: 2px solid var(--thin-choco) !important;
+}
+html[data-site-theme="thinCocoa"] .chat-field {
+  background: var(--thin-choco) !important;
+  border-color: rgba(255,255,255,.32) !important;
+  color: #fff !important;
+  border-radius: 20px !important;
+}
+html[data-site-theme="thinCocoa"] .chat-field::placeholder {
+  color: rgba(255,255,255,.72) !important;
+}
+html[data-site-theme="thinCocoa"] .chat-input-area button {
+  color: var(--thin-dark) !important;
+}
+
+html[data-site-theme="thinCocoa"][data-bubble-skin="default"] .echoes-bubble-other {
+  background: var(--thin-choco) !important;
+  border: 1px solid rgba(255,255,255,.32) !important;
+  color: #fff !important;
+  border-radius: 20px !important;
+  box-shadow: 0 2px 8px rgba(181,161,152,.22) !important;
+}
+html[data-site-theme="thinCocoa"][data-bubble-skin="default"] .echoes-bubble-user {
+  background: var(--thin-mint) !important;
+  border: 1px solid rgba(181,161,152,.25) !important;
+  color: #43544C !important;
+  border-radius: 20px !important;
+  box-shadow: 0 2px 8px rgba(225,246,241,.8) !important;
+}
+html[data-site-theme="thinCocoa"][data-bubble-skin="default"] .echoes-bubble-other::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  top: -20px !important;
+  left: auto !important;
+  right: 10px !important;
+  width: 48px !important;
+  height: 48px !important;
+  background: url("../assets/theme/thin-cocoa/bubble-other.png") center/contain no-repeat !important;
+  transform: none !important;
+  filter: none !important;
+  pointer-events: none;
+  z-index: 10;
+}
+html[data-site-theme="thinCocoa"][data-bubble-skin="default"] .echoes-bubble-user::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  top: -20px !important;
+  right: 8px !important;
+  left: auto !important;
+  width: 48px !important;
+  height: 48px !important;
+  background: url("../assets/theme/thin-cocoa/bubble-user.png") center/contain no-repeat !important;
+  transform: none !important;
+  filter: none !important;
+  pointer-events: none;
+  z-index: 10;
+}
+
+
+html[data-site-theme="thinCocoa"][data-user-avatar-frame-skin="none"] .echoes-avatar-user:not(:has(> .avatar-frame))::after,
+html[data-site-theme="thinCocoa"] .echoes-avatar-other[data-avatar-frame-skin-id="none"]:not(:has(> .avatar-frame))::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 165% !important;
+  height: 165% !important;
+  transform: translate(-50%, -50%) !important;
+  background: url("../assets/theme/thin-cocoa/avatar-frame.png") center/contain no-repeat !important;
+  border: 0 !important;
+  filter: none !important;
+  pointer-events: none;
+  z-index: 8;
+}
+
+html[data-site-theme="thinCocoa"] .app-topbar-back,
+html[data-site-theme="thinCocoa"] .chat-back {
+  border: 0 !important;
+  background: url("../assets/theme/thin-cocoa/back.png") center/contain no-repeat !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="thinCocoa"] .app-topbar-back svg,
+html[data-site-theme="thinCocoa"] .chat-back svg {
+  display: none !important;
+}
+html[data-site-theme="thinCocoa"] .chat-head-options {
+  border: 0 !important;
+  background: url("../assets/theme/thin-cocoa/settings.png") center/contain no-repeat !important;
+  color: transparent !important;
+  box-shadow: none !important;
+  font-size: 0 !important;
+}
+html[data-site-theme="thinCocoa"] .chat-input-area::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: calc(100% - 13px) !important;
+  height: 52px !important;
+  background: url("../assets/theme/thin-cocoa/input-decoration.png") center bottom/contain no-repeat !important;
+  pointer-events: none;
+  z-index: 10;
+}
+html[data-site-theme="thinCocoa"] .echoes-narrator {
+  background: var(--thin-mint) !important;
+  border: 2px solid var(--thin-choco) !important;
+  color: var(--thin-dark) !important;
+}
+html[data-site-theme="thinCocoa"] .echoes-narrator::before,
+html[data-site-theme="thinCocoa"] .echoes-narrator::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  top: 50% !important;
+  width: 38px !important;
+  height: 38px !important;
+  transform: translateY(-50%) !important;
+  background: url("../assets/theme/thin-cocoa/narrator.png") center/contain no-repeat !important;
+  pointer-events: none;
+}
+html[data-site-theme="thinCocoa"] .echoes-narrator::before { left: 6px !important; }
+html[data-site-theme="thinCocoa"] .echoes-narrator::after { right: 6px !important; }
+
+html[data-site-theme="thinCocoa"] .native-launcher-icon-card,
+html[data-site-theme="thinCocoa"] .theme-color-editor,
+html[data-site-theme="thinCocoa"] .skin-editor-section,
+html[data-site-theme="thinCocoa"] .auto-chat-section {
+  background: var(--thin-card) !important;
+  border-color: #D8CFB0 !important;
+  box-shadow: none !important;
+}

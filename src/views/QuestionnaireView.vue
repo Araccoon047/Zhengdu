@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import {
   QUESTION_TYPES,
   answerQuestionnaire,
@@ -21,6 +21,15 @@ const activeId = ref('')
 const source = ref('manual')
 const notice = ref('')
 const copied = ref(false)
+const timingMode = ref('perQuestion')
+const perQuestionSeconds = ref(10)
+const totalTimeValue = ref(2)
+const totalTimeUnit = ref('minute')
+const thinking = ref(false)
+const thinkingRemaining = ref(0)
+const thinkingTotal = ref(0)
+const thinkingIndex = ref(1)
+let thinkingTimer = null
 
 const contactName = computed(() => contactDisplayName(primaryContact()) || 'TA')
 const answeredAt = computed(() => {
@@ -43,6 +52,9 @@ function startCompose() {
 }
 
 function backToList() {
+  clearInterval(thinkingTimer)
+  thinkingTimer = null
+  thinking.value = false
   stage.value = 'list'
   notice.value = ''
   copied.value = false
@@ -97,11 +109,19 @@ function removeOption(question, index) {
   })
 }
 
-function runAnswer() {
+function currentTimingSettings() {
+  return {
+    mode: timingMode.value === 'total' ? 'total' : 'perQuestion',
+    perQuestionSeconds: Math.max(1, Math.round(Number(perQuestionSeconds.value) || 10)),
+    totalValue: Math.max(1, Math.round(Number(totalTimeValue.value) || 1)),
+    totalUnit: totalTimeUnit.value === 'second' ? 'second' : 'minute',
+  }
+}
+function prepareUsableQuestions() {
   const usable = questions.value.filter((question) => question.title.trim())
   if (!usable.length) {
     notice.value = '至少需要一道有题干的题目'
-    return
+    return []
   }
   usable.forEach((question) => {
     question.options = (question.options || []).filter((option) => option.text.trim())
@@ -110,7 +130,9 @@ function runAnswer() {
       question.options = []
     }
   })
-  questions.value = usable
+  return usable
+}
+function finishAnswer(usable, timing) {
   rows.value = answerQuestionnaire(usable)
   const item = {
     id: activeId.value || makeId('qn'),
@@ -118,6 +140,7 @@ function runAnswer() {
     source: source.value,
     questions: usable,
     rows: rows.value,
+    timing,
     createdAt: Date.now(),
   }
   activeId.value = item.id
@@ -125,20 +148,63 @@ function runAnswer() {
   stage.value = 'result'
   notice.value = ''
   copied.value = false
+  thinking.value = false
 }
+function startThinking(usable, timing) {
+  clearInterval(thinkingTimer)
+  const questionCount = usable.length
+  const totalSeconds = timing.mode === 'total'
+    ? timing.totalValue * (timing.totalUnit === 'minute' ? 60 : 1)
+    : questionCount * timing.perQuestionSeconds
+  thinkingTotal.value = Math.max(1, totalSeconds)
+  thinkingRemaining.value = thinkingTotal.value
+  thinkingIndex.value = 1
+  thinking.value = true
+  stage.value = 'thinking'
+  const startedAt = Date.now()
+  thinkingTimer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000)
+    thinkingRemaining.value = Math.max(0, thinkingTotal.value - elapsed)
+    if (timing.mode === 'total') {
+      thinkingIndex.value = Math.min(questionCount, Math.max(1, Math.floor(elapsed / thinkingTotal.value * questionCount) + 1))
+    } else {
+      thinkingIndex.value = Math.min(questionCount, Math.max(1, Math.floor(elapsed / timing.perQuestionSeconds) + 1))
+    }
+    if (thinkingRemaining.value <= 0) {
+      clearInterval(thinkingTimer)
+      thinkingTimer = null
+      finishAnswer(usable, timing)
+    }
+  }, 250)
+}
+function runAnswer() {
+  const usable = prepareUsableQuestions()
+  if (!usable.length) return
+  questions.value = usable
+  startThinking(usable, currentTimingSettings())
+}
+function cancelThinking() {
+  clearInterval(thinkingTimer)
+  thinkingTimer = null
+  thinking.value = false
+  stage.value = 'preview'
+  notice.value = '已取消本次作答'
+}
+
+
 
 function reAnswer() {
   if (!questions.value.length) return
-  rows.value = answerQuestionnaire(questions.value)
   const item = items.value.find((entry) => entry.id === activeId.value)
-  if (item) {
-    item.rows = rows.value
-    item.createdAt = Date.now()
-    items.value = saveQuestionnaire(item)
-  }
-  copied.value = false
-  notice.value = '已重新随机作答'
+  const timing = item?.timing || currentTimingSettings()
+  timingMode.value = timing.mode === 'total' ? 'total' : 'perQuestion'
+  perQuestionSeconds.value = timing.perQuestionSeconds || 10
+  totalTimeValue.value = timing.totalValue || 2
+  totalTimeUnit.value = timing.totalUnit || 'minute'
+  startThinking(questions.value, timing)
 }
+
+
 
 async function copyAnswers() {
   const text = formatAnswersOnly(rows.value)
@@ -169,6 +235,11 @@ function openItem(item) {
   source.value = item.source || 'manual'
   stage.value = 'result'
   notice.value = ''
+  const timing = item.timing || {}
+  timingMode.value = timing.mode === 'total' ? 'total' : 'perQuestion'
+  perQuestionSeconds.value = timing.perQuestionSeconds || 10
+  totalTimeValue.value = timing.totalValue || 2
+  totalTimeUnit.value = timing.totalUnit || 'minute'
 }
 
 function deleteItem(item, event) {
@@ -181,6 +252,7 @@ function editAgain() {
   stage.value = 'preview'
   notice.value = '修改后点「让 TA 作答」会重新出结果'
 }
+onUnmounted(() => clearInterval(thinkingTimer))
 </script>
 
 <template>
@@ -284,6 +356,13 @@ function editAgain() {
 
           <input v-model="question.title" class="qn-title-input" type="text" placeholder="题干" maxlength="200" />
 
+          <div v-if="question.images?.length" class="qn-image-grid">
+            <figure v-for="(image, imageIndex) in question.images" :key="image + imageIndex">
+              <img :src="image" alt="题目图片" />
+              <button type="button" aria-label="删除题目图片" @click="question.images.splice(imageIndex, 1)">×</button>
+            </figure>
+          </div>
+
           <div v-if="question.type !== 'yesno'" class="qn-options">
             <div v-for="(option, optionIndex) in question.options" :key="option.key" class="qn-option-row">
               <span class="qn-opt-key">{{ option.key }}</span>
@@ -302,6 +381,15 @@ function editAgain() {
 
       <div v-if="notice" class="qn-notice">{{ notice }}</div>
 
+      <section class="qn-timing-card">
+        <div class="qn-timing-head"><strong>问答时间</strong><span>可逐题计时，也可设定整份问卷总时间</span></div>
+        <div class="qn-timing-modes">
+          <button type="button" :class="{ active: timingMode === 'perQuestion' }" @click="timingMode = 'perQuestion'">按问题计时</button>
+          <button type="button" :class="{ active: timingMode === 'total' }" @click="timingMode = 'total'">按总时间计时</button>
+        </div>
+        <label v-if="timingMode === 'perQuestion'" class="qn-time-row"><span>每个问题思考时间</span><div><input v-model.number="perQuestionSeconds" type="number" min="1" max="3600" /><b>秒</b></div></label>
+        <div v-else class="qn-time-row"><span>整份问卷总时间</span><div><input v-model.number="totalTimeValue" type="number" min="1" max="86400" /><select v-model="totalTimeUnit"><option value="second">秒</option><option value="minute">分钟</option></select></div></div>
+      </section>
       <div class="qn-sticky">
         <button class="qn-btn" type="button" @click="backToList">取消</button>
         <button class="qn-btn primary" type="button" @click="runAnswer">让 {{ contactName }} 作答</button>
@@ -309,6 +397,21 @@ function editAgain() {
     </template>
 
     <!-- 结果 -->
+    <!-- 思考计时 -->
+    <template v-else-if="stage === 'thinking'">
+      <header class="qn-page-head">
+        <button type="button" class="qn-back" @click="cancelThinking">←</button>
+        <div><strong>正在作答</strong><small>第 {{ thinkingIndex }} / {{ questions.length }} 题</small></div>
+      </header>
+      <section class="qn-thinking">
+        <span class="qn-thinking-orb"><i></i><i></i><i></i></span>
+        <strong>{{ contactName }} 正在思考第 {{ thinkingIndex }} 题</strong>
+        <b>{{ thinkingRemaining }} 秒</b>
+        <div class="qn-thinking-progress"><i :style="{ width: ((thinkingTotal - thinkingRemaining) / thinkingTotal * 100) + '%' }"></i></div>
+        <button type="button" class="qn-btn" @click="cancelThinking">取消作答</button>
+      </section>
+    </template>
+
     <template v-else>
       <header class="qn-page-head">
         <button type="button" class="qn-back" @click="backToList">←</button>
@@ -634,7 +737,10 @@ function editAgain() {
   outline: none;
   border-color: var(--theme-primary);
 }
-.qn-options {
+.qn-image-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 7px 0; }
+.qn-image-grid figure { position: relative; margin: 0; aspect-ratio: 1; overflow: hidden; border-radius: 9px; background: var(--theme-soft); }
+.qn-image-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qn-image-grid button { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: grid; place-items: center; font-size: 12px; }.qn-options {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -779,4 +885,5 @@ function editAgain() {
     grid-template-columns: 1fr 1fr;
   }
 }
+.qn-timing-card{padding:12px;border:1px solid var(--theme-border-soft);border-radius:14px;background:var(--theme-surface);display:flex;flex-direction:column;gap:9px}.qn-timing-head{display:flex;flex-direction:column;gap:2px}.qn-timing-head strong{color:var(--theme-text-strong);font-size:11px}.qn-timing-head span{color:var(--theme-muted);font-size:8.5px}.qn-timing-modes{display:grid;grid-template-columns:1fr 1fr;gap:5px}.qn-timing-modes button{padding:7px;border:1px solid var(--theme-border-soft);border-radius:9px;background:var(--theme-soft);color:var(--theme-text);font-size:9px;font-weight:700}.qn-timing-modes button.active{background:var(--theme-primary);color:var(--theme-inverse);border-color:var(--theme-primary)}.qn-time-row{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--theme-text);font-size:9.5px}.qn-time-row>div{display:flex;align-items:center;gap:5px}.qn-time-row input,.qn-time-row select{width:78px;padding:7px;border:1px solid var(--theme-border-soft);border-radius:8px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:10px}.qn-time-row b{color:var(--theme-muted);font-size:9px}.qn-thinking{min-height:340px;padding:24px 16px;border:1px solid var(--theme-border-soft);border-radius:18px;background:var(--theme-surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center}.qn-thinking-orb{position:relative;width:74px;height:74px;display:grid;place-items:center}.qn-thinking-orb i{position:absolute;inset:0;border:1px solid var(--theme-primary);border-radius:50%;animation:qn-think 1.8s ease-out infinite;opacity:0}.qn-thinking-orb i:nth-child(2){animation-delay:.6s}.qn-thinking-orb i:nth-child(3){animation-delay:1.2s}@keyframes qn-think{0%{transform:scale(.35);opacity:.75}100%{transform:scale(1.2);opacity:0}}.qn-thinking strong{color:var(--theme-text-strong);font-size:14px}.qn-thinking>b{color:var(--theme-primary);font-size:28px}.qn-thinking-progress{width:min(240px,80%);height:5px;border-radius:99px;background:var(--theme-soft);overflow:hidden}.qn-thinking-progress i{display:block;height:100%;border-radius:inherit;background:var(--theme-primary);transition:width .25s linear}
 </style>

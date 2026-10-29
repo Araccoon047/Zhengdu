@@ -5,6 +5,7 @@ import { settings, resetCustomSettings, saveSettingsNow, SITE_THEMES, CONTACT_AU
 import {
   chatState,
   clearAllMessages,
+  contactById,
   contactDisplayName,
   primaryContact,
   notificationPermission,
@@ -14,12 +15,18 @@ import {
   updateContact,
 } from '../chat'
 import { cropImage } from '../image-crop'
+import { imageFileToOriginalDataUrl } from '../image-utils'
+import { avatarFrameStyle, resolveAvatarFrameSkinCss } from '../avatar-frame-style'
+import { STATUS_BUBBLE_SKIN_OPTIONS, transferCardSkinOptions } from '../theme/card-skins'
 import LineGlyph from '../components/LineGlyph.vue'
+import LaunchSplash from '../components/LaunchSplash.vue'
 import { CHAT_TOOL_CATALOG, createDefaultChatToolSettings } from '../chat-tools'
 import ProbabilityField from '../components/ProbabilityField.vue'
 import { BUILTIN_AVATAR_FRAME_SKINS, BUILTIN_BUBBLE_SKINS } from '../theme/skins'
 import { APP_ICON_THEMES, appIconSrc } from '../app-icons'
-import { canCustomizeLauncherIcon, createNativeLauncherShortcut, isNativeApp, nativeAppVersion, requestIgnoreBatteryOptimizations, requestNativePermissions } from '../native-bridge'
+import { SPLASH_OPTIONS, defaultSplashConfig, splashPresetById } from '../splash'
+import { HOME_APP_ITEMS } from '../home-apps'
+import { isNativeApp, nativeAppVersion, requestIgnoreBatteryOptimizations, requestNativePermissions } from '../native-bridge'
 import { AI_PROVIDERS, isAiConfigured, requestAiInterpretation } from '../ai'
 import {
   EXPORT_CATEGORIES,
@@ -34,34 +41,79 @@ import {
   parseBackupText,
 } from '../data-tools'
 
-const appIconItems = [
-  { id: 'album', label: '相册', glyph: 'album' },
-  { id: 'journey', label: '日历', glyph: 'journey' },
-  { id: 'music', label: '音乐', glyph: 'music' },
-  { id: 'sms', label: '聊天', glyph: 'sms' },
-  { id: 'moments', label: '朋友圈', glyph: 'moments' },
-  { id: 'stats', label: '消息统计', glyph: 'stats' },
-  { id: 'tarot', label: '塔罗牌', glyph: 'tarot' },
-  { id: 'mail', label: '信箱', glyph: 'mail' },
-  { id: 'pomodoro', label: '番茄钟', glyph: 'pomodoro' },
-  { id: 'questionnaire', label: '问卷', glyph: 'questionnaire' },
-  { id: 'period', label: '经期记录', glyph: 'period' },
-  { id: 'accounting', label: '记账', glyph: 'accounting' },
-  { id: 'memory', label: '纪念日', glyph: 'heart' },
-  { id: 'avatarLib', label: '头像库', glyph: 'user' },
-]
+const appIconItems = HOME_APP_ITEMS
 
 const anniversaryPresets = ['我们在一起已经', '遇见你', '爱上你已经']
 const FONT_OPTIONS = [
   { id: 'default', name: '默认字体', description: '随和黑体，全站默认' },
   { id: 'pixel', name: '缝合怪像素字体', description: '12px 像素风，复古游戏感' },
+  { id: 'custom', name: '自定义字体链接', description: '粘贴 WOFF、WOFF2、TTF 或 OTF 地址' },
 ]
+const fontPresetName = ref('')
+const fontNotice = ref('')
 const activeSection = ref('')
+const splashPrimaryInput = ref(null)
+const splashSecondaryInput = ref(null)
+const splashSchemeName = ref('')
+const splashNotice = ref('')
+const activeSplashPreset = computed(() => splashPresetById(settings.splashPreset))
+const activeSplashConfig = computed(() =>
+  settings.splashConfigs?.[settings.splashPreset] || activeSplashPreset.value.defaults || {}
+)
 const isNativeShell = isNativeApp()
 const nativeShellVersion = nativeAppVersion()
 const nativePermissionRequested = ref(false)
-const nativeShortcutLabel = ref('争渡')
-const nativeShortcutPreview = ref('')
+const themeAvatarFrameInput = ref(null)
+const frameTargetType = ref('user')
+const frameContactId = ref(chatState.contacts[0]?.id || '')
+const frameTargetContact = computed(() => contactById(frameContactId.value) || chatState.contacts[0] || null)
+const frameTargetLabel = computed(() =>
+  frameTargetType.value === 'user' ? (settings.userName || '我') : contactDisplayName(frameTargetContact.value)
+)
+const frameTargetImage = computed(() =>
+  frameTargetType.value === 'user' ? settings.userAvatarFrame || '' : frameTargetContact.value?.avatarFrame || ''
+)
+const frameAvatarImage = computed(() =>
+  frameTargetType.value === 'user' ? settings.anniversaryAvatarB || '' : frameTargetContact.value?.avatarImage || ''
+)
+const frameAvatarFallback = computed(() =>
+  frameTargetType.value === 'user' ? '我' : (frameTargetContact.value?.avatar || 'TA')
+)
+const frameTargetStyle = computed(() =>
+  avatarFrameStyle(frameTargetType.value === 'user'
+    ? {
+        avatarFrameOffsetX: settings.userAvatarFrameOffsetX,
+        avatarFrameOffsetY: settings.userAvatarFrameOffsetY,
+        avatarFrameScale: settings.userAvatarFrameScale,
+      }
+    : frameTargetContact.value || {})
+)
+function getFrameTargetValue(key) {
+  if (frameTargetType.value === 'user') {
+    return settings[`user${key[0].toUpperCase()}${key.slice(1)}`]
+  }
+  return frameTargetContact.value?.[key]
+}
+function setFrameTargetValue(key, value) {
+  if (frameTargetType.value === 'user') {
+    settings[`user${key[0].toUpperCase()}${key.slice(1)}`] = value
+    return
+  }
+  if (!frameTargetContact.value) return
+  updateContact(frameTargetContact.value.id, { [key]: value })
+}
+const frameOffsetX = computed({
+  get: () => Number(getFrameTargetValue('avatarFrameOffsetX')) || 0,
+  set: (value) => setFrameTargetValue('avatarFrameOffsetX', Math.max(-80, Math.min(80, Math.round(Number(value) || 0)))),
+})
+const frameOffsetY = computed({
+  get: () => Number(getFrameTargetValue('avatarFrameOffsetY')) || 0,
+  set: (value) => setFrameTargetValue('avatarFrameOffsetY', Math.max(-80, Math.min(80, Math.round(Number(value) || 0)))),
+})
+const frameScale = computed({
+  get: () => Number(getFrameTargetValue('avatarFrameScale')) || 1,
+  set: (value) => setFrameTargetValue('avatarFrameScale', Math.round(Math.max(0.5, Math.min(2, Number(value) || 1)) * 100) / 100),
+})
 const aiTesting = ref(false)
 const aiTestResult = ref('')
 const aiTestError = ref('')
@@ -71,6 +123,7 @@ const settingsSections = [
   { id: 'linkStatus', label: '连接状态组件', hint: '自定义链接状态卡片比例' },
   { id: 'taToday', label: 'TA想对你说组件', hint: '从字卡库抽取每日留言' },
   { id: 'homeBackground', label: '主页背景', hint: '主页壁纸与不透明度' },
+  { id: 'photoCarousel', label: '照片轮播组件', hint: '轮播速度、组件高度和照片大小' },
   { id: 'momentsBackground', label: '朋友圈背景图', hint: '我的与联系人分别设置' },
   { id: 'autoChat', label: 'TA的回复', hint: '回复、主动消息与概率' },
   { id: 'chatTools', label: '聊天工具', hint: '工具开关与默认参数' },
@@ -79,6 +132,7 @@ const settingsSections = [
   { id: 'notifications', label: '通知', hint: '站内与浏览器通知' },
   { id: 'viewMode', label: '查看模式', hint: '切换手机与网站视图' },
   { id: 'icons', label: '图标', hint: 'App 图标主题与自定义' },
+  { id: 'splash', label: '开屏动画', hint: '五种可自定义开屏与预设方案' },
   { id: 'data', label: '数据', hint: '存储、备份与清理' },
   { id: 'theme', label: '主题', hint: '网站整体配色' },
 ]
@@ -135,16 +189,52 @@ const selectedAutoSettings = computed(() => {
 })
 const bubbleSkinChoices = computed(() => [...BUILTIN_BUBBLE_SKINS, ...(settings.customBubbleSkins || [])])
 const avatarFrameChoices = computed(() => [...BUILTIN_AVATAR_FRAME_SKINS, ...(settings.customAvatarFrameSkins || [])])
+const presetFrameTarget = ref('user')
+function applyAvatarFramePreset(value) {
+  const skin = avatarFrameChoices.value.find((item) => item.id === value)
+  const image = skin?.image || ''
+  const offsetX = image ? Number(skin.offsetX) || 0 : 0
+  const offsetY = image ? Number(skin.offsetY) || 0 : 0
+  const scale = image ? Math.max(0.5, Math.min(2, Number(skin.scale) || 1)) : 1
+  if (presetFrameTarget.value === 'user') {
+    settings.userAvatarFrameSkin = value
+    settings.userAvatarFrame = image
+    settings.userAvatarFrameOffsetX = offsetX
+    settings.userAvatarFrameOffsetY = offsetY
+    settings.userAvatarFrameScale = scale
+  } else if (frameTargetContact.value) {
+    updateContact(frameTargetContact.value.id, {
+      avatarFrameSkin: value,
+      avatarFrame: image,
+      avatarFrameOffsetX: offsetX,
+      avatarFrameOffsetY: offsetY,
+      avatarFrameScale: scale,
+    })
+  }
+}
+const selectedPresetAvatarFrameSkin = computed({
+  get: () => presetFrameTarget.value === 'user'
+    ? settings.userAvatarFrameSkin
+    : (frameTargetContact.value?.avatarFrameSkin || 'none'),
+  set: (value) => applyAvatarFramePreset(value),
+})
+const customMoodInput = ref('')
+const transferSkinChoices = computed(() => transferCardSkinOptions(SITE_THEMES))
 const customBubbleName = ref('')
 const customBubbleCss = ref('')
 const customFrameName = ref('')
 const customFrameCss = ref('')
+const imageFramePresetName = ref('')
 const selectedBubbleSkinCss = computed(
   () => bubbleSkinChoices.value.find((skin) => skin.id === settings.chatBubbleSkin)?.css || ''
 )
-const selectedAvatarFrameCss = computed(
-  () => avatarFrameChoices.value.find((skin) => skin.id === settings.avatarFrameSkin)?.css || ''
-)
+const selectedAvatarFrameCss = computed(() => {
+  const skin = avatarFrameChoices.value.find((item) => item.id === selectedPresetAvatarFrameSkin.value)
+  if (skin?.image) {
+    return `上传图片预设：X ${Number(skin.offsetX) || 0}px · Y ${Number(skin.offsetY) || 0}px · 大小 ${(Number(skin.scale) || 1).toFixed(2)}×`
+  }
+  return resolveAvatarFrameSkinCss(skin)
+})
 function addCustomBubbleSkin() {
   const name = customBubbleName.value.trim()
   const css = customBubbleCss.value.trim()
@@ -165,13 +255,59 @@ function addCustomFrameSkin() {
   if (!name || !css) return
   const skin = { id: `frame-custom-${Date.now()}`, name: name.slice(0, 24), css }
   settings.customAvatarFrameSkins = [...(settings.customAvatarFrameSkins || []), skin]
-  settings.avatarFrameSkin = skin.id
+  selectedPresetAvatarFrameSkin.value = skin.id
   customFrameName.value = ''
   customFrameCss.value = ''
 }
 function removeCustomFrameSkin(id) {
   settings.customAvatarFrameSkins = (settings.customAvatarFrameSkins || []).filter((skin) => skin.id !== id)
-  if (settings.avatarFrameSkin === id) settings.avatarFrameSkin = 'none'
+  if (settings.userAvatarFrameSkin === id) {
+    settings.userAvatarFrameSkin = 'none'
+    settings.userAvatarFrame = ''
+    settings.userAvatarFrameOffsetX = 0
+    settings.userAvatarFrameOffsetY = 0
+    settings.userAvatarFrameScale = 1
+  }
+  if (settings.contactAvatarFrameSkin === id) settings.contactAvatarFrameSkin = 'none'
+  for (const contact of chatState.contacts) {
+    if (contact.avatarFrameSkin === id) {
+      updateContact(contact.id, {
+        avatarFrameSkin: 'none',
+        avatarFrame: '',
+        avatarFrameOffsetX: 0,
+        avatarFrameOffsetY: 0,
+        avatarFrameScale: 1,
+      })
+    }
+  }
+}
+function saveCurrentFrameAsPreset() {
+  const image = frameTargetImage.value
+  const name = imageFramePresetName.value.trim()
+  if (!image) {
+    saveNotice.value = '请先上传头像框图片'
+    return
+  }
+  if (!name) {
+    saveNotice.value = '请先给头像框预设起名'
+    return
+  }
+  const skin = {
+    id: `frame-custom-${Date.now()}`,
+    name: name.slice(0, 24),
+    description: '上传图片生成的头像框预设',
+    css: '',
+    image,
+    offsetX: frameOffsetX.value,
+    offsetY: frameOffsetY.value,
+    scale: frameScale.value,
+  }
+  settings.customAvatarFrameSkins = [...(settings.customAvatarFrameSkins || []), skin]
+  presetFrameTarget.value = frameTargetType.value
+  selectedPresetAvatarFrameSkin.value = skin.id
+  imageFramePresetName.value = ''
+  saveSettingsNow()
+  saveNotice.value = `已保存头像框预设「${skin.name}」`
 }
 const appIconThemeOptions = computed(() => [
   ...APP_ICON_THEMES,
@@ -210,6 +346,39 @@ function appIconStatus(id) {
   return '当前使用默认线条图标'
 }
 
+function applyCustomFontPreset(preset) {
+  settings.siteFont = 'custom'
+  settings.customFontUrl = preset.url
+  settings.customFontFamily = preset.family || 'ZhengduCustomFont'
+  fontPresetName.value = preset.name
+  fontNotice.value = `已应用字体预设「${preset.name}」`
+}
+function saveCustomFontPreset() {
+  const name = fontPresetName.value.trim() || settings.customFontFamily || '我的字体'
+  const url = String(settings.customFontUrl || '').trim()
+  if (!url) {
+    fontNotice.value = '请先填写字体链接或 @font-face 代码'
+    return
+  }
+  const family = settings.customFontFamily || 'ZhengduCustomFont'
+  const presets = Array.isArray(settings.customFontPresets) ? [...settings.customFontPresets] : []
+  const existing = presets.findIndex((preset) => preset.name === name)
+  const preset = {
+    id: existing >= 0 ? presets[existing].id : `font-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    name: name.slice(0, 30),
+    url,
+    family,
+  }
+  if (existing >= 0) presets[existing] = preset
+  else presets.unshift(preset)
+  settings.customFontPresets = presets.slice(0, 30)
+  settings.siteFont = 'custom'
+  fontNotice.value = `已保存字体预设「${preset.name}」`
+}
+function deleteCustomFontPreset(id) {
+  settings.customFontPresets = (settings.customFontPresets || []).filter((preset) => preset.id !== id)
+  fontNotice.value = '已删除字体预设'
+}
 function saveIconThemeSettings() {
   saveSettingsNow()
   saveNotice.value = '图标主题已保存'
@@ -283,6 +452,65 @@ function saveMomentsCoverSettings() {
   saveNotice.value = '已保存并立即生效'
   clearTimeout(saveNoticeTimer)
   saveNoticeTimer = setTimeout(() => (saveNotice.value = ''), 1800)
+}
+function restoreSplashDefaults() {
+  const id = settings.splashPreset
+  if (!id || id === 'none') return
+  settings.splashConfigs[id] = defaultSplashConfig(id)
+  splashNotice.value = `已恢复「${activeSplashPreset.value.name}」默认设置`
+}
+
+function saveSplashScheme() {
+  const name = splashSchemeName.value.trim()
+  if (!settings.splashPreset || settings.splashPreset === 'none') {
+    splashNotice.value = '请先选择一个开屏预设'
+    return
+  }
+  if (!name) {
+    splashNotice.value = '请先给方案起名'
+    return
+  }
+  const scheme = {
+    id: `splash-scheme-${Date.now()}`,
+    name: name.slice(0, 30),
+    presetId: settings.splashPreset,
+    config: { ...activeSplashConfig.value },
+  }
+  settings.splashSchemes = [scheme, ...(settings.splashSchemes || [])].slice(0, 40)
+  splashSchemeName.value = ''
+  splashNotice.value = `已保存开屏方案「${scheme.name}」`
+}
+
+function applySplashScheme(scheme) {
+  settings.splashPreset = scheme.presetId
+  settings.splashConfigs[scheme.presetId] = { ...scheme.config }
+  splashNotice.value = `已应用开屏方案「${scheme.name}」`
+}
+
+function deleteSplashScheme(id) {
+  settings.splashSchemes = (settings.splashSchemes || []).filter((scheme) => scheme.id !== id)
+  splashNotice.value = '已删除开屏方案'
+}
+
+async function pickSplashImage(event, key, aspectRatio) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file?.type?.startsWith('image/')) return
+  try {
+    const result = await cropImage(file, {
+      title: key === 'primaryImage' ? '裁剪苦橙主图' : '裁剪苦橙副图',
+      aspectRatio,
+      lockAspect: true,
+      shape: 'rect',
+      maxSide: 1600,
+      quality: 0.86,
+    })
+    if (!result) return
+    settings.splashConfigs.bitterOrange[key] = result
+    splashNotice.value = key === 'primaryImage' ? '已更新苦橙主图' : '已更新苦橙副图'
+  } catch (error) {
+    splashNotice.value = error.message || '图片处理失败'
+  }
 }
 const activeSectionTitle = computed(
   () => settingsSections.find((section) => section.id === activeSection.value)?.label || '设置'
@@ -440,11 +668,41 @@ function clampInterval(key) {
       : 60
 }
 
+function normalizeSelectedReplyDelay(changed = 'min') {
+  let min = Math.max(0, Number(selectedAutoSettings.value.replyDelayMinSeconds) || 0)
+  let max = Math.max(0, Number(selectedAutoSettings.value.replyDelayMaxSeconds) || 0)
+  if (min > max) {
+    if (changed === 'min') max = min
+    else min = max
+  }
+  selectedAutoSettings.value.replyDelayMinSeconds = min
+  selectedAutoSettings.value.replyDelayMaxSeconds = max
+}
+function clampSelectedAutoValue(key, min, max, fallback) {
+  const value = Math.round(Number(selectedAutoSettings.value[key]))
+  selectedAutoSettings.value[key] = Number.isFinite(value)
+    ? Math.min(max, Math.max(min, value))
+    : fallback
+}
+
 function clampAutoValue(key, min, max, fallback) {
   const value = Math.round(Number(settings[key]))
   settings[key] = Number.isFinite(value)
     ? Math.min(max, Math.max(min, value))
     : fallback
+}
+
+function addCustomDiaryMood() {
+  const value = customMoodInput.value.trim().slice(0, 16)
+  if (!value) return
+  if (!Array.isArray(settings.customDiaryMoods)) settings.customDiaryMoods = []
+  if (!settings.customDiaryMoods.includes(value)) settings.customDiaryMoods.push(value)
+  customMoodInput.value = ''
+}
+
+function removeCustomDiaryMood(index) {
+  if (!Array.isArray(settings.customDiaryMoods)) return
+  settings.customDiaryMoods.splice(index, 1)
 }
 
 function clampDiaryCardRange(prefix, changed) {
@@ -504,6 +762,14 @@ function bgStyle(url, opacity = 60) {
   }
 }
 
+function anniversaryBackgroundAspect() {
+  const match = String(settings.anniversaryCardSize || '4x2').match(/^(\d+)\s*[xX×]\s*(\d+)$/)
+  if (!match) return 2
+  const width = Number(match[1])
+  const height = Number(match[2])
+  return width > 0 && height > 0 ? width / height : 2
+}
+
 async function pickImage(event, key, maxSide, aspectRatio = 16 / 9) {
   const file = event.target.files?.[0]
   event.target.value = ''
@@ -513,6 +779,7 @@ async function pickImage(event, key, maxSide, aspectRatio = 16 / 9) {
     const result = await cropImage(file, {
       title: key === 'momentsBackground' ? '裁剪朋友圈背景图' : '裁剪背景图',
       aspectRatio,
+      lockAspect: true,
       shape: 'rect',
       maxSide,
       quality: 0.84,
@@ -732,6 +999,9 @@ async function handleImport(all = false) {
       result.stickers ? `表情包 ${result.stickers}` : '',
       result.settings ? '网站设置' : '',
       result.album ? `相册 ${result.album}` : '',
+      result.appData ? `其他应用数据 ${result.appData}` : '',
+      result.musicFiles ? `音乐文件 ${result.musicFiles}` : '',
+      result.needsReload ? '，导入后页面将自动刷新' : '',
     ].filter(Boolean)
     importNotice.value = summary.length ? `导入完成：${summary.join('、')}` : '没有读取到可导入的数据。'
     if (storageOpen.value) await loadStorageDetails()
@@ -769,42 +1039,40 @@ function openBatteryOptimizationSettings() {
   requestIgnoreBatteryOptimizations()
 }
 
-async function pickNativeShortcutIcon(event) {
+async function pickThemeAvatarFrame(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
-  if (!file) return
+  if (!file?.type?.startsWith('image/')) return
   imageError.value = ''
   try {
-    const result = await cropImage(file, {
-      title: '裁剪桌面图标',
-      aspectRatio: 1,
-      lockAspect: true,
-      shape: 'rect',
-      maxSide: 512,
-      quality: 0.92,
-    })
-    if (result) nativeShortcutPreview.value = result
+    const result = await imageFileToOriginalDataUrl(file)
+    if (!result) return
+    setFrameTargetValue('avatarFrame', result)
+    setFrameTargetValue('avatarFrameOffsetX', 0)
+    setFrameTargetValue('avatarFrameOffsetY', 0)
+    setFrameTargetValue('avatarFrameScale', 1)
+    saveSettingsNow()
+    saveNotice.value = `已更新${frameTargetLabel.value}的头像框`
   } catch (e) {
-    imageError.value = e.message || '图片处理失败'
+    imageError.value = e.message || '头像框上传失败'
   }
 }
 
-function createDesktopShortcut() {
-  if (!canCustomizeLauncherIcon()) {
-    imageError.value = '自定义桌面图标仅在套壳 App 中可用'
-    return
-  }
-  if (!nativeShortcutPreview.value) {
-    imageError.value = '请先选择一张图标图片'
-    return
-  }
-  const created = createNativeLauncherShortcut(nativeShortcutPreview.value, nativeShortcutLabel.value.trim() || '争渡')
-  if (!created) {
-    imageError.value = '当前手机桌面不支持固定快捷方式，或桌面空间已满'
-    return
-  }
-  imageError.value = ''
+function clearThemeAvatarFrame() {
+  setFrameTargetValue('avatarFrame', '')
+  saveSettingsNow()
 }
+
+function adjustThemeAvatarFrameScale(delta) {
+  frameScale.value = frameScale.value + delta
+}
+
+function resetThemeAvatarFramePosition() {
+  frameOffsetX.value = 0
+  frameOffsetY.value = 0
+  frameScale.value = 1
+}
+
 function readImportFile(file) {
   if (typeof file.text === 'function') return file.text()
   return new Promise((resolve, reject) => {
@@ -932,6 +1200,11 @@ onMounted(() => {
             <button v-if="settings.anniversaryAvatarB" class="small-button" type="button" @click="settings.anniversaryAvatarB = ''">清除</button>
           </div>
         </div>
+        <label class="switch-row">
+          <span>显示头像框</span>
+          <input v-model="settings.anniversaryShowAvatarFrames" type="checkbox" />
+        </label>
+        <p class="frame-preset-hint">关闭后，纪念日卡片的两个头像仍会显示，但不显示用户或联系人头像框。</p>
         <label class="field">
           <span>背景图片</span>
           <input v-model="settings.anniversaryBackground" class="input" type="text" placeholder="图片链接" />
@@ -939,7 +1212,7 @@ onMounted(() => {
         <div class="image-actions">
           <label class="file-button">
             选择纪念日背景
-            <input type="file" accept="image/*" @change="pickImage($event, 'anniversaryBackground', 1600)" />
+            <input type="file" accept="image/*" @change="pickImage($event, 'anniversaryBackground', 1600, anniversaryBackgroundAspect())" />
           </label>
           <button v-if="settings.anniversaryBackground" class="small-button" type="button" @click="clearImage('anniversaryBackground')">清除</button>
         </div>
@@ -1081,7 +1354,7 @@ onMounted(() => {
         <div class="image-actions">
           <label class="file-button">
             选择主页图片
-            <input type="file" accept="image/*" @change="pickImage($event, 'homeBackground', 1600)" />
+            <input type="file" accept="image/*" @change="pickImage($event, 'homeBackground', 1600, 9 / 16)" />
           </label>
           <button v-if="settings.homeBackground" class="small-button" type="button" @click="clearImage('homeBackground')">清除</button>
         </div>
@@ -1091,6 +1364,52 @@ onMounted(() => {
           <input v-model.number="settings.homeBackgroundOpacity" type="range" min="0" max="100" />
           <strong>{{ settings.homeBackgroundOpacity }}%</strong>
         </label>
+      </div>
+    </details>
+
+    <details v-show="activeSection === 'photoCarousel'" :open="activeSection === 'photoCarousel'" class="echoes-character-card setting-group settings-subpage">
+      <summary>
+        <span class="label">照片轮播组件</span>
+        <span class="arrow">›</span>
+      </summary>
+      <div class="group-body">
+        <section class="echoes-character-card auto-chat-section carousel-settings-card">
+          <div class="auto-chat-title">轮播速度</div>
+          <div class="opacity-row">
+            <span>切换间隔</span>
+            <input v-model.number="settings.photoCarouselSpeed" type="range" min="1" max="20" step="0.5" />
+            <strong>{{ settings.photoCarouselSpeed }} 秒</strong>
+          </div>
+          <div class="auto-chat-hint">数值越小，照片自动滚动的速度越快。默认 4.5 秒。</div>
+        </section>
+
+        <section class="echoes-character-card auto-chat-section carousel-settings-card">
+          <div class="auto-chat-title">组件高度</div>
+          <div class="carousel-height-options">
+            <button
+              v-for="height in 4"
+              :key="height"
+              type="button"
+              :class="{ active: Number(settings.photoCarouselHeight) === height }"
+              @click="settings.photoCarouselHeight = height"
+            >
+              {{ height }} 格高
+            </button>
+          </div>
+          <div class="auto-chat-hint">按主页 APP 网格计算，组件宽度固定为 4 格。默认 2 格高。</div>
+        </section>
+
+        <section class="echoes-character-card auto-chat-section carousel-settings-card">
+          <div class="auto-chat-title">照片大小</div>
+          <div class="opacity-row">
+            <span>照片尺寸</span>
+            <input v-model.number="settings.photoCarouselPhotoSize" type="range" min="35" max="90" step="1" />
+            <strong>{{ settings.photoCarouselPhotoSize }}%</strong>
+          </div>
+          <div class="auto-chat-hint">控制轮播中主照片的显示大小，两侧照片会按比例缩小并淡出。</div>
+        </section>
+
+        <div class="auto-chat-hint">轮播内容来自「相册 → 轮播合集」。没有加入轮播合集的照片不会出现在桌面组件里。</div>
       </div>
     </details>
 
@@ -1213,18 +1532,30 @@ onMounted(() => {
             <ProbabilityField v-if="!selectedAutoSettings.forbidContactHangup" v-model="selectedAutoSettings.contactHangupChance" v-model:random-value="selectedAutoSettings.contactHangupChanceRandom" label="主动挂断概率（%）" />
             <div class="auto-chat-hint">接通后，联系人按该概率在随机时刻主动挂断（不设固定时间）。开启「禁止联系人主动挂断」后该概率失效，联系人永不主动挂断，只能由你结束通话。</div>
           </section>        <section v-show="activeAutoChatTab === 'reply'" class="auto-chat-section">
-          <div class="auto-chat-title">回复频率设置</div>
+          <div class="auto-chat-title">回复延迟 · {{ chatState.contacts.find((contact) => contact.id === selectedAutoContactId)?.note || 'TA' }}</div>
           <div class="interval-grid">
             <label>
               <span>最少延迟（秒）</span>
-              <input v-model.number="settings.replyDelayMinSeconds" type="number" min="1" max="120" @change="clampAutoValue('replyDelayMinSeconds', 1, 120, 4)" />
+              <input v-model.number="selectedAutoSettings.replyDelayMinSeconds" type="number" step="1" @change="normalizeSelectedReplyDelay('min')" />
             </label>
             <label>
               <span>最多延迟（秒）</span>
-              <input v-model.number="settings.replyDelayMaxSeconds" type="number" min="1" max="120" @change="clampAutoValue('replyDelayMaxSeconds', 1, 120, 7)" />
+              <input v-model.number="selectedAutoSettings.replyDelayMaxSeconds" type="number" step="1" @change="normalizeSelectedReplyDelay('max')" />
             </label>
           </div>
-          <div class="auto-chat-hint">你发消息后，TA 在这个时间范围内随机回复。</div>
+          <div class="auto-chat-hint">只影响当前选中的联系人。不设最长等待限制，可填写任意秒数；0 秒表示立即回复。</div>
+          <div class="auto-chat-title">每次回复消息条数</div>
+          <div class="interval-grid">
+            <label>
+              <span>最少消息条数</span>
+              <input v-model.number="selectedAutoSettings.replyMessageMin" type="number" min="1" max="10" @change="clampSelectedRange('replyMessageMin', 'replyMessageMax', 'min', 1, 10)" />
+            </label>
+            <label>
+              <span>最多消息条数</span>
+              <input v-model.number="selectedAutoSettings.replyMessageMax" type="number" min="1" max="10" @change="clampSelectedRange('replyMessageMin', 'replyMessageMax', 'max', 1, 10)" />
+            </label>
+          </div>
+          <div class="auto-chat-hint">只控制本次回复会发几条独立消息，不控制每条消息里包含几张字卡。字卡张数请在“拼词造句”中设置。</div>
         </section>
 
         <section v-show="activeAutoChatTab === 'craft'" class="auto-chat-section">
@@ -1242,16 +1573,16 @@ onMounted(() => {
           </div>
           <div v-if="selectedAutoSettings.multiCardEnabled" class="interval-grid">
             <label>
-              <span>最少条数</span>
+              <span>每条消息最少张数</span>
               <input v-model.number="selectedAutoSettings.multiCardMin" type="number" min="1" max="10" @change="clampSelectedRange('multiCardMin', 'multiCardMax', 'min', 1, 10)" />
             </label>
             <label>
-              <span>最多条数</span>
+              <span>每条消息最多张数</span>
               <input v-model.number="selectedAutoSettings.multiCardMax" type="number" min="1" max="10" @change="clampSelectedRange('multiCardMin', 'multiCardMax', 'max', 1, 10)" />
             </label>
           </div>
-          <div v-if="selectedAutoSettings.multiCardEnabled" class="range-preview">当前范围：{{ selectedAutoSettings.multiCardMin }}～{{ selectedAutoSettings.multiCardMax }} 条</div>
-          <div class="auto-chat-hint">关闭后每次只回复一张字卡。开启时按概率和范围决定本次回复条数。</div>
+          <div v-if="selectedAutoSettings.multiCardEnabled" class="range-preview">每条消息：{{ selectedAutoSettings.multiCardMin }}～{{ selectedAutoSettings.multiCardMax }} 张字卡</div>
+          <div class="auto-chat-hint">关闭后每条消息只包含一张字卡。开启后，每条消息会在当前张数范围内抽取多张字卡，并用空格合并成一条消息；消息条数由“回复与主动”单独决定。</div>
         </section>
 
         <section v-show="activeAutoChatTab === 'reply'" class="auto-chat-section">
@@ -1620,7 +1951,18 @@ onMounted(() => {
               <span>心情</span>
               <input v-model="selectedAutoSettings.diaryMoodEnabled" type="checkbox" :disabled="!selectedAutoSettings.diaryEnabled" />
             </label>
-            <div class="auto-chat-hint">心情会从内置心情选项中随机选择；留言和情话会从字卡库中抽取。关闭总开关时，这三个选项暂不生效。</div>
+            <div class="diary-custom-moods">
+              <div class="diary-custom-mood-input">
+                <input v-model="customMoodInput" type="text" maxlength="16" placeholder="添加自定义心情" @keydown.enter.prevent="addCustomDiaryMood" />
+                <button type="button" @click="addCustomDiaryMood">添加</button>
+              </div>
+              <div v-if="settings.customDiaryMoods?.length" class="diary-mood-chips">
+                <span v-for="(mood, index) in settings.customDiaryMoods" :key="mood">
+                  {{ mood }}<button type="button" aria-label="删除心情" @click="removeCustomDiaryMood(index)">×</button>
+                </span>
+              </div>
+            </div>
+            <div class="auto-chat-hint">心情会从内置选项和自定义选项中随机选择；留言和情话会从字卡库中抽取。关闭总开关时，这三个选项暂不生效。</div>
           </section>
         </div>      </div>
     </details>
@@ -1836,34 +2178,7 @@ onMounted(() => {
         <div class="image-actions">
           <button class="small-button" type="button" @click="createCustomIconTheme">新增自定义图标主题</button>
         </div>
-        <section v-if="isNativeShell" class="native-launcher-icon-card">
-          <div class="native-launcher-icon-head">
-            <div>
-              <strong>套壳 App 桌面图标</strong>
-              <span>仅 Android 套壳版本可用。上传图片后可创建一个带自定义图标和名称的桌面快捷方式。</span>
-            </div>
-          </div>
-          <div class="native-launcher-icon-body">
-            <span class="native-launcher-icon-preview">
-              <img v-if="nativeShortcutPreview" :src="nativeShortcutPreview" alt="自定义桌面图标预览" />
-              <LineGlyph v-else type="settings" />
-            </span>
-            <div class="native-launcher-icon-fields">
-              <label class="field">
-                <span>桌面图标名称</span>
-                <input v-model="nativeShortcutLabel" class="input" type="text" maxlength="20" placeholder="争渡" />
-              </label>
-              <div class="image-actions">
-                <label class="file-button">
-                  选择图标图片
-                  <input type="file" accept="image/*" @change="pickNativeShortcutIcon" />
-                </label>
-                <button class="small-button primary" type="button" :disabled="!nativeShortcutPreview" @click="createDesktopShortcut">创建自定义桌面图标</button>
-              </div>
-            </div>
-          </div>
-          <p class="auto-chat-hint">Android 标准桌面不支持由普通应用直接替换已安装 App 的全局图标，因此这里会创建一个使用你上传图片的固定桌面快捷方式。创建时可移除旧图标并保留新图标。</p>
-        </section>
+
         <p class="app-icon-intro">选择成套图标主题，也可以为指定 App 单独上传照片。自定义上传优先于成套主题。</p>
         <div class="app-icon-settings">
           <div v-for="item in appIconItems" :key="item.id" class="app-icon-setting-row">
@@ -1893,6 +2208,87 @@ onMounted(() => {
       </div>
     </details>
 
+    <details v-show="activeSection === 'splash'" :open="activeSection === 'splash'" class="echoes-character-card setting-group settings-subpage">
+      <summary>
+        <span class="label">开屏动画</span>
+        <span class="arrow">›</span>
+      </summary>
+      <div class="group-body splash-settings-page">
+        <section class="skin-editor-section splash-preset-section">
+          <div class="skin-section-head"><div><strong>选择开屏预设</strong><span>五种动画均可编辑文案；不使用开屏则直接进入主页。</span></div></div>
+          <div class="splash-preset-grid">
+            <label v-for="preset in SPLASH_OPTIONS" :key="preset.id" class="splash-preset-card" :class="{ active: settings.splashPreset === preset.id }">
+              <input v-model="settings.splashPreset" type="radio" :value="preset.id" />
+              <span><strong>{{ preset.name }}</strong><small>{{ preset.description }}</small></span>
+              <i>{{ settings.splashPreset === preset.id ? '✓' : '' }}</i>
+            </label>
+          </div>
+        </section>
+
+        <template v-if="activeSplashPreset.kind !== 'none'">
+          <section class="skin-editor-section splash-preview-section">
+            <div class="skin-section-head"><div><strong>实时预览</strong><span>实际启动时会按此配置显示。</span></div><button type="button" @click="restoreSplashDefaults">恢复默认</button></div>
+            <div class="splash-preview-frame">
+              <LaunchSplash :preset-id="settings.splashPreset" :config="activeSplashConfig" preview />
+            </div>
+          </section>
+
+          <section v-if="activeSplashPreset.kind === 'mobius'" class="skin-editor-section splash-editor-section">
+            <div class="skin-section-head"><div><strong>莫比乌斯文案</strong><span>主文案和副文案都支持换行。</span></div></div>
+            <label class="field"><span>主文案</span><textarea v-model="activeSplashConfig.title" class="splash-textarea" rows="3" maxlength="300"></textarea></label>
+            <label class="field"><span>副文案</span><textarea v-model="activeSplashConfig.quote" class="splash-textarea" rows="5" maxlength="800"></textarea></label>
+          </section>
+
+          <section v-else-if="activeSplashPreset.kind === 'spring'" class="skin-editor-section splash-editor-section">
+            <div class="skin-section-head"><div><strong>浪漫春日文案与颜色</strong><span>英文行、中文行和文字颜色均可独立修改。</span></div></div>
+            <label class="field"><span>英文文字</span><input v-model="activeSplashConfig.english" class="input" type="text" maxlength="120" /></label>
+            <label class="field"><span>中文文字</span><textarea v-model="activeSplashConfig.chinese" class="splash-textarea" rows="2" maxlength="120"></textarea></label>
+            <div class="splash-color-grid">
+              <label class="field"><span>文字颜色</span><input v-model="activeSplashConfig.textColor" class="input color-input" type="color" /></label>
+              <label class="field"><span>高亮颜色</span><input v-model="activeSplashConfig.accentColor" class="input color-input" type="color" /></label>
+            </div>
+          </section>
+
+          <section v-else-if="activeSplashPreset.kind === 'bitterOrange'" class="skin-editor-section splash-editor-section">
+            <div class="skin-section-head"><div><strong>苦橙文案与图片</strong><span>特殊文字和英文单词可分别改色，图片使用固定比例裁剪。</span></div></div>
+            <div class="splash-field-grid">
+              <label class="field"><span>水印文字</span><input v-model="activeSplashConfig.lead" class="input" type="text" maxlength="20" /></label>
+              <label class="field"><span>中文短句</span><input v-model="activeSplashConfig.small" class="input" type="text" maxlength="40" /></label>
+              <label class="field"><span>特殊文字</span><input v-model="activeSplashConfig.accent" class="input" type="text" maxlength="30" /></label>
+              <label class="field"><span>英文单词</span><input v-model="activeSplashConfig.english" class="input" type="text" maxlength="40" /></label>
+            </div>
+            <div class="splash-color-grid">
+              <label class="field"><span>特殊文字颜色</span><input v-model="activeSplashConfig.accentColor" class="input color-input" type="color" /></label>
+              <label class="field"><span>英文单词颜色</span><input v-model="activeSplashConfig.englishColor" class="input color-input" type="color" /></label>
+            </div>
+            <div class="splash-image-actions">
+              <button class="small-button" type="button" @click="splashPrimaryInput?.click()">上传主图 · 固定 3:1</button>
+              <button class="small-button" type="button" @click="splashSecondaryInput?.click()">上传副图 · 固定 4:1</button>
+              <input ref="splashPrimaryInput" class="hidden-file" type="file" accept="image/*" @change="pickSplashImage($event, 'primaryImage', 3)" />
+              <input ref="splashSecondaryInput" class="hidden-file" type="file" accept="image/*" @change="pickSplashImage($event, 'secondaryImage', 4)" />
+            </div>
+            <p class="frame-preset-hint">主图会裁成 3:1，副图会裁成 4:1；显示尺寸由预设固定，上传后不会拉伸变形。</p>
+          </section>
+
+          <section class="skin-editor-section splash-scheme-section">
+            <div class="skin-section-head"><div><strong>保存为预设方案</strong><span>保存当前文案、颜色和图片，之后可一键应用。</span></div></div>
+            <div class="splash-scheme-save">
+              <input v-model.trim="splashSchemeName" type="text" maxlength="30" placeholder="给当前方案起名" />
+              <button type="button" @click="saveSplashScheme">保存方案</button>
+            </div>
+            <div v-if="settings.splashSchemes?.length" class="splash-scheme-list">
+              <article v-for="scheme in settings.splashSchemes" :key="scheme.id" class="splash-scheme-item">
+                <div><strong>{{ scheme.name }}</strong><small>{{ splashPresetById(scheme.presetId).name }}</small></div>
+                <button type="button" @click="applySplashScheme(scheme)">应用</button>
+                <button type="button" class="danger-text" @click="deleteSplashScheme(scheme.id)">删除</button>
+              </article>
+            </div>
+            <p v-else class="frame-preset-hint">还没有保存的开屏方案。</p>
+            <p v-if="splashNotice" class="status-line success">{{ splashNotice }}</p>
+          </section>
+        </template>
+      </div>
+    </details>
     <details v-show="activeSection === 'data'" :open="activeSection === 'data'" class="echoes-character-card setting-group settings-subpage">
       <summary>
         <span class="label">数据</span>
@@ -2079,6 +2475,28 @@ onMounted(() => {
               <span class="theme-check">{{ settings.siteFont === font.id ? '✓' : '' }}</span>
             </label>
           </div>
+          <label v-if="settings.siteFont === 'custom'" class="field custom-font-field">
+            <span>字体文件、CSS 链接或 @font-face 代码</span>
+            <textarea v-model.trim="settings.customFontUrl" class="input custom-font-textarea" rows="3" maxlength="12000" placeholder="https://example.com/font.css 或直接粘贴 @font-face { ... }"></textarea>
+          </label>
+          <label v-if="settings.siteFont === 'custom'" class="field custom-font-field">
+            <span>字体名称（CSS font-family）</span>
+            <input v-model.trim="settings.customFontFamily" class="input" type="text" maxlength="80" placeholder="例如 Noto Sans SC" />
+          </label>
+          <div v-if="settings.siteFont === 'custom'" class="font-preset-save">
+            <input v-model.trim="fontPresetName" type="text" maxlength="30" placeholder="给当前字体预设命名" />
+            <button type="button" @click="saveCustomFontPreset">保存为预设</button>
+          </div>
+          <div v-if="settings.siteFont === 'custom' && settings.customFontPresets?.length" class="font-preset-list">
+            <article v-for="preset in settings.customFontPresets" :key="preset.id" class="font-preset-item" :class="{ active: preset.url === settings.customFontUrl && preset.family === settings.customFontFamily }">
+              <button type="button" class="font-preset-apply" @click="applyCustomFontPreset(preset)"><strong>{{ preset.name }}</strong><small>{{ preset.family }}</small></button>
+              <button type="button" class="font-preset-delete" @click="deleteCustomFontPreset(preset.id)">删</button>
+            </article>
+          </div>
+          <p v-if="fontNotice" class="status-line success">{{ fontNotice }}</p>
+          <p v-if="settings.siteFont === 'custom'" class="font-load-note">
+            {{ settings.customFontUrl ? '字体链接会即时载入；Google Fonts 等 CSS 链接会自动识别字体名。若仍未显示，请填写 CSS 中的准确 font-family，并确认链接允许跨域。' : '请填写可直接访问的字体文件地址。' }}
+          </p>
         </section>
         <div class="theme-color-editor">
           <label class="field">
@@ -2115,14 +2533,23 @@ onMounted(() => {
           <div class="skin-create">
             <input v-model="customBubbleName" type="text" maxlength="24" placeholder="新气泡皮肤名称" />
             <textarea v-model="customBubbleCss" rows="5" placeholder="粘贴自定义气泡 CSS，例如 .echoes-bubble-user { ... }"></textarea>
+            <div class="auto-chat-hint">CSS 中的图片请使用 HTTPS 直链或 data:image。HTTP 图片在 APP 内会自动改走 HTTPS 图片代理；防盗链、登录校验或网页链接仍可能失败。</div>
             <button type="button" @click="addCustomBubbleSkin">添加气泡皮肤</button>
           </div>
         </section>
         <section class="skin-editor-section">
-          <div class="skin-section-head"><div><strong>头像框 CSS</strong><span>默认无头像框，与主题、气泡独立搭配</span></div></div>
+          <div class="skin-section-head"><div><strong>头像框预设</strong><span>系统预设、上传图片预设与自定义 CSS 均可自由切换</span></div></div>
+          <div class="frame-target-switch avatar-preset-target">
+            <button type="button" :class="{ active: presetFrameTarget === 'user' }" @click="presetFrameTarget = 'user'">给用户戴</button>
+            <button type="button" :class="{ active: presetFrameTarget === 'contact' }" @click="presetFrameTarget = 'contact'">给联系人戴</button>
+            <select v-if="presetFrameTarget === 'contact'" v-model="frameContactId">
+              <option v-for="contact in chatState.contacts" :key="contact.id" :value="contact.id">{{ contactDisplayName(contact) }}</option>
+            </select>
+          </div>
+          <p class="frame-preset-hint">用户和联系人分别保存，互不同步。当前正在设置：{{ presetFrameTarget === 'user' ? '用户' : (frameTargetContact ? contactDisplayName(frameTargetContact) : '暂无联系人') }}。</p>
           <div class="skin-choice-list">
-            <article v-for="skin in avatarFrameChoices" :key="skin.id" class="skin-choice" :class="{ active: settings.avatarFrameSkin === skin.id }">
-              <label><input v-model="settings.avatarFrameSkin" type="radio" :value="skin.id" /><span><strong>{{ skin.name }}</strong><small>{{ skin.description || '' }}</small></span></label>
+            <article v-for="skin in avatarFrameChoices" :key="skin.id" class="skin-choice" :class="{ active: selectedPresetAvatarFrameSkin === skin.id }">
+              <label><input v-model="selectedPresetAvatarFrameSkin" type="radio" :value="skin.id" /><span><strong>{{ skin.name }}</strong><small>{{ skin.description || '' }}</small></span></label>
               <button v-if="skin.id.startsWith('frame-custom-')" type="button" class="skin-delete" @click="removeCustomFrameSkin(skin.id)">删除</button>
             </article>
           </div>
@@ -2130,7 +2557,74 @@ onMounted(() => {
           <div class="skin-create">
             <input v-model="customFrameName" type="text" maxlength="24" placeholder="新头像框皮肤名称" />
             <textarea v-model="customFrameCss" rows="5" placeholder="粘贴自定义头像框 CSS，例如 .echoes-avatar-user::after { ... }"></textarea>
+            <div class="auto-chat-hint">建议上传图片后使用应用内生成的数据地址；外部链接优先使用允许跨域、无防盗链的 HTTPS 图片直链。</div>
             <button type="button" @click="addCustomFrameSkin">添加头像框皮肤</button>
+          </div>
+        </section>
+
+        <section class="skin-editor-section">
+          <div class="skin-section-head"><div><strong>头像框图片调整</strong><span>可切换用户或联系人，透明底图片默认中心对齐</span></div></div>
+          <div class="frame-target-switch">
+            <button type="button" :class="{ active: frameTargetType === 'user' }" @click="frameTargetType = 'user'">用户</button>
+            <button type="button" :class="{ active: frameTargetType === 'contact' }" @click="frameTargetType = 'contact'">联系人</button>
+            <select v-if="frameTargetType === 'contact'" v-model="frameContactId">
+              <option v-for="contact in chatState.contacts" :key="contact.id" :value="contact.id">{{ contactDisplayName(contact) }}</option>
+            </select>
+          </div>
+          <div class="theme-frame-preview">
+            <span class="theme-frame-avatar">
+              <img v-if="frameAvatarImage" :src="frameAvatarImage" alt="头像预览" />
+              <template v-else>{{ frameAvatarFallback }}</template>
+              <img
+                v-if="frameTargetImage"
+                class="theme-frame-image"
+                :src="frameTargetImage"
+                :style="frameTargetStyle"
+                alt="头像框预览"
+              />
+            </span>
+            <div class="theme-frame-preview-copy">
+              <strong>{{ frameTargetLabel }} · {{ frameTargetImage ? '头像框预览' : '尚未上传头像框' }}</strong>
+              <small>可以直接上传透明 PNG，不需要裁剪。</small>
+              <div class="image-actions">
+                <button class="small-button" type="button" @click="themeAvatarFrameInput?.click()">上传透明头像框</button>
+                <button v-if="frameTargetImage" class="small-button" type="button" @click="clearThemeAvatarFrame">清除头像框</button>
+              </div>
+              <input ref="themeAvatarFrameInput" class="hidden-file" type="file" accept="image/*" @change="pickThemeAvatarFrame" />
+            </div>
+          </div>
+          <div class="frame-preset-save">
+            <input v-model.trim="imageFramePresetName" type="text" maxlength="24" placeholder="给当前头像框预设起名" />
+            <button type="button" :disabled="!frameTargetImage" @click="saveCurrentFrameAsPreset">保存为头像框预设</button>
+          </div>
+          <p class="frame-preset-hint">保存后可在上方“头像框预设”列表中随时选用；位置与大小会一并保存。</p>
+          <div v-if="frameTargetImage" class="frame-adjust-grid">
+            <label><span>X 轴</span><input v-model.number="frameOffsetX" type="range" min="-80" max="80" step="1" /><strong>{{ frameOffsetX }}px</strong></label>
+            <label><span>Y 轴</span><input v-model.number="frameOffsetY" type="range" min="-80" max="80" step="1" /><strong>{{ frameOffsetY }}px</strong></label>
+            <label><span>大小</span><input v-model.number="frameScale" type="range" min="0.5" max="2" step="0.01" /><strong>{{ frameScale.toFixed(2) }}×</strong></label>
+            <div class="frame-scale-buttons">
+              <button type="button" @click="adjustThemeAvatarFrameScale(-0.05)">−</button>
+              <button type="button" @click="adjustThemeAvatarFrameScale(0.05)">＋</button>
+              <button type="button" @click="resetThemeAvatarFramePosition">重置位置</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="skin-editor-section">
+          <div class="skin-section-head"><div><strong>转账卡皮肤</strong><span>独立于主题，暂不支持自定义</span></div></div>
+          <div class="skin-choice-list">
+            <article v-for="skin in transferSkinChoices" :key="skin.id" class="skin-choice" :class="{ active: settings.transferCardSkin === skin.id }">
+              <label><input v-model="settings.transferCardSkin" type="radio" :value="skin.id" /><span><strong>{{ skin.name }}</strong><small>{{ skin.description }}</small></span></label>
+            </article>
+          </div>
+        </section>
+
+        <section class="skin-editor-section">
+          <div class="skin-section-head"><div><strong>拍一拍和已读不回皮肤</strong><span>与转账卡使用同一套预设，暂不支持自定义</span></div></div>
+          <div class="skin-choice-list">
+            <article v-for="skin in STATUS_BUBBLE_SKIN_OPTIONS" :key="skin.id" class="skin-choice" :class="{ active: settings.statusBubbleSkin === skin.id }">
+              <label><input v-model="settings.statusBubbleSkin" type="radio" :value="skin.id" /><span><strong>{{ skin.name }}</strong><small>{{ skin.description }}</small></span></label>
+            </article>
           </div>
         </section>
 
@@ -2400,7 +2894,13 @@ onMounted(() => {
   accent-color: var(--theme-primary);
 }
 
-.diary-card-range {
+.diary-custom-moods { display: flex; flex-direction: column; gap: 7px; margin: 8px 0 2px; }
+.diary-custom-mood-input { display: flex; gap: 6px; align-items: center; }
+.diary-custom-mood-input input { flex: 1; min-width: 0; padding: 8px 9px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-surface); color: var(--theme-text); font: inherit; font-size: 10px; }
+.diary-custom-mood-input button { flex: none; }
+.diary-mood-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.diary-mood-chips > span { display: inline-flex; align-items: center; gap: 3px; padding: 4px 6px 4px 9px; border-radius: 999px; background: var(--theme-soft); color: var(--theme-text); font-size: 9px; }
+.diary-mood-chips button { min-height: 0; width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--theme-muted); display: grid; place-items: center; font-size: 12px; }.diary-card-range {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2942,69 +3442,6 @@ onMounted(() => {
   line-height: 1.1;
 }
 
-.native-launcher-icon-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--theme-border-soft);
-  border-radius: 14px;
-  background: var(--theme-surface);
-}
-
-.native-launcher-icon-head strong {
-  display: block;
-  color: var(--theme-primary);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.native-launcher-icon-head span {
-  display: block;
-  margin-top: 3px;
-  color: var(--theme-muted);
-  font-size: 9.5px;
-  line-height: 1.5;
-}
-
-.native-launcher-icon-body {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-}
-
-.native-launcher-icon-preview {
-  width: 76px;
-  height: 76px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--theme-border-soft);
-  border-radius: 20px;
-  background: #ffffff;
-  color: var(--app-icon-color);
-}
-
-.native-launcher-icon-preview img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.native-launcher-icon-preview svg {
-  width: 30px;
-  height: 30px;
-}
-
-.native-launcher-icon-fields {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .file-button.primary,
 .file-button:has(input:focus-visible) {
   border-color: var(--theme-primary);
@@ -3206,6 +3643,25 @@ onMounted(() => {
 .theme-preview.theme-peach i { background: #ffdde2; border: 1px solid #c26187; }
 .theme-preview.theme-peach i:nth-child(2) { width: 72%; background: #fff9e5; }
 .theme-preview.theme-peach i:nth-child(3) { width: 46%; background: #c26187; }
+.theme-preview.theme-strawberry-milk { background: #FFF3E8; }
+.theme-preview.theme-strawberry-milk i { background: #FAD8DF; border: 1px solid #F29DB0; }
+.theme-preview.theme-strawberry-milk i:nth-child(2) { width: 72%; background: #FFFFFF; border-color: #F2C7CF; }
+.theme-preview.theme-strawberry-milk i:nth-child(3) { width: 46%; background: #F29DB0; }.theme-preview.theme-thin-cocoa { background: #F4FAF8; }
+.theme-preview.theme-thin-cocoa i { background: #E1F6F1; border: 1px solid #7EB7AA; }
+.theme-preview.theme-thin-cocoa i:nth-child(2) { width: 72%; background: #B5A198; border-color: #6E584F; }
+.theme-preview.theme-thin-cocoa i:nth-child(3) { width: 46%; background: #7EB7AA; }
+.theme-preview.theme-daidai-tu { background: #F7F7F7; }
+.theme-preview.theme-daidai-tu i { background: rgba(255,255,255,.7); border: 1px solid #DEDEDE; border-radius: 999px; }
+.theme-preview.theme-daidai-tu i:nth-child(2) { width: 72%; background: #F0F0F0; }
+.theme-preview.theme-daidai-tu i:nth-child(3) { width: 46%; background: #888888; }
+.theme-preview.theme-berlin-snow { background: linear-gradient(145deg,#ECEFF4,#F8F9FB); }
+.theme-preview.theme-berlin-snow i { background: rgba(255,255,255,.72); border: 2px solid #E3E4E8; border-radius: 3px; }
+.theme-preview.theme-berlin-snow i:nth-child(2) { width: 72%; background: #F5F5F8; }
+.theme-preview.theme-berlin-snow i:nth-child(3) { width: 46%; background: #AEB4BD; }
+.theme-preview.theme-faint-silk { background: linear-gradient(130deg,#E7E7EA,#F5F5F6); }
+.theme-preview.theme-faint-silk i { background: rgba(255,255,255,.34); border: 1px solid rgba(180,180,180,.5); border-radius: 12px; }
+.theme-preview.theme-faint-silk i:nth-child(2) { width: 72%; background: rgba(255,255,255,.56); }
+.theme-preview.theme-faint-silk i:nth-child(3) { width: 46%; background: #8E8E8E; }
 .theme-choice-copy {
   flex: 1;
   min-width: 0;
@@ -3399,7 +3855,10 @@ onMounted(() => {
   color: var(--theme-primary);
 }
 
-.custom-icon-theme-editor,
+.carousel-settings-card { padding: 11px 12px; }
+.carousel-height-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.carousel-height-options button { padding: 8px 5px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-soft); color: var(--theme-muted); font-size: 9px; font-weight: 750; }
+.carousel-height-options button.active { border-color: var(--theme-primary); background: var(--theme-primary); color: var(--theme-inverse); }.custom-icon-theme-editor,
 .theme-color-editor {
   display: flex;
   flex-direction: column;
@@ -3466,6 +3925,16 @@ onMounted(() => {
   padding-right: 24px;
   text-align-last: right;
 }
+.settings .field.custom-font-field > input.input {
+  width: 100%;
+  text-align: left;
+}
+.font-load-note {
+  margin: -2px 0 2px;
+  color: var(--theme-muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
 .settings .interval-grid input[type="text"],
 .settings .interval-grid input[type="number"],
 .settings .interval-grid input[type="time"] {
@@ -3475,7 +3944,53 @@ onMounted(() => {
 }.skin-editor-section{display:flex;flex-direction:column;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--theme-border-soft)}
 .skin-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.skin-section-head>div{display:flex;flex-direction:column;gap:2px}.skin-section-head strong{color:var(--theme-primary);font-size:12px}.skin-section-head span{color:var(--theme-muted);font-size:9px}.skin-section-head button,.skin-create button,.skin-delete{padding:7px 9px;border:1px solid var(--theme-border-soft);border-radius:9px;background:var(--theme-soft);color:var(--theme-primary);font-size:9px;font-weight:800;cursor:pointer}
 .skin-choice-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.skin-choice{min-width:0;padding:8px;border:1px solid var(--theme-border-soft);border-radius:11px;background:var(--theme-surface);display:flex;align-items:center;gap:6px}.skin-choice.active{border-color:var(--theme-primary);background:var(--theme-soft)}.skin-choice label{flex:1;min-width:0;display:flex;align-items:center;gap:6px;cursor:pointer}.skin-choice input{accent-color:var(--theme-primary)}.skin-choice label span{min-width:0;display:flex;flex-direction:column;gap:2px}.skin-choice strong{overflow:hidden;color:var(--theme-text-strong);font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}.skin-choice small{color:var(--theme-muted);font-size:8px}.skin-delete{color:var(--theme-accent-warm)!important;background:var(--theme-danger-surface)!important}
-.skin-code-preview summary{color:var(--theme-muted);font-size:9px;cursor:pointer}.skin-code-preview textarea,.skin-create textarea,.skin-create input{width:100%;margin-top:6px;padding:8px;border:1px solid var(--theme-border-soft);border-radius:9px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:9.5px;resize:vertical}.skin-create{display:flex;flex-direction:column;gap:6px}
+.frame-target-switch { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.frame-target-switch button { flex: 1; min-width: 76px; }
+.frame-target-switch button.active { border-color: var(--theme-primary); background: var(--theme-primary); color: var(--theme-inverse); }
+.frame-target-switch select { flex: 1 1 150px; min-width: 0; padding: 7px 9px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-surface); color: var(--theme-text); font: inherit; font-size: 9px; }.theme-frame-preview { display: flex; align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--theme-border-soft); border-radius: 14px; background: var(--theme-soft); }
+.theme-frame-avatar { position: relative; flex: none; width: 86px; height: 86px; border-radius: 50%; background: var(--theme-primary); color: var(--theme-inverse); display: grid; place-items: center; overflow: visible; font-size: 22px; font-weight: 800; }
+.theme-frame-avatar > img:first-child { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.theme-frame-image { position: absolute; top: 50%; left: 50%; width: 120%; height: 120%; max-width: none; object-fit: contain; border-radius: 0; transform-origin: center; pointer-events: none; z-index: 3; }
+.theme-frame-preview-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.theme-frame-preview-copy strong { color: var(--theme-text-strong); font-size: 11px; }
+.theme-frame-preview-copy small { color: var(--theme-muted); font-size: 9px; line-height: 1.5; }
+.frame-adjust-grid { display: flex; flex-direction: column; gap: 8px; }
+.frame-adjust-grid > label { display: grid; grid-template-columns: 44px minmax(0,1fr) 48px; align-items: center; gap: 8px; color: var(--theme-text); font-size: 9px; }
+.frame-adjust-grid input[type="range"] { width: 100%; accent-color: var(--theme-primary); }
+.frame-adjust-grid strong { color: var(--theme-primary); font-size: 9px; text-align: right; }
+.frame-scale-buttons { display: flex; gap: 6px; }
+.frame-scale-buttons button { flex: 1; }.frame-preset-save { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 10px; }.frame-preset-save input { min-width: 0; padding: 8px 10px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-soft); color: var(--theme-text); font: inherit; font-size: 9.5px; }.frame-preset-save button { padding: 8px 10px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-primary); color: var(--theme-inverse); font-size: 9px; font-weight: 800; cursor: pointer; white-space: nowrap; }.frame-preset-save button:disabled { opacity: .45; cursor: default; }.frame-preset-hint { margin: -2px 0 3px; color: var(--theme-muted); font-size: 8.5px; line-height: 1.5; }.skin-code-preview summary{color:var(--theme-muted);font-size:9px;cursor:pointer}.skin-code-preview textarea,.skin-create textarea,.skin-create input{width:100%;margin-top:6px;padding:8px;border:1px solid var(--theme-border-soft);border-radius:9px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:9.5px;resize:vertical}.skin-create{display:flex;flex-direction:column;gap:6px}
 @media(max-width:560px){.skin-choice-list{grid-template-columns:1fr}}
+@media(max-width:380px){.frame-preset-save{grid-template-columns:1fr}.frame-preset-save button{width:100%}}
+.splash-settings-page { gap: 12px; }
+.splash-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.splash-preset-card { min-width: 0; padding: 10px; border: 1px solid var(--theme-border-soft); border-radius: 12px; background: var(--theme-surface); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.splash-preset-card.active { border-color: var(--theme-primary); background: var(--theme-soft); }
+.splash-preset-card input { accent-color: var(--theme-primary); }
+.splash-preset-card span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.splash-preset-card strong { color: var(--theme-text-strong); font-size: 10px; }
+.splash-preset-card small { color: var(--theme-muted); font-size: 8.5px; line-height: 1.45; }
+.splash-preset-card i { flex: none; color: var(--theme-primary); font-size: 12px; font-style: normal; }
+.splash-preview-frame { width: 100%; overflow: hidden; border-radius: 16px; background: #090a10; }
+.splash-editor-section { gap: 10px; }
+.splash-color-grid, .splash-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.splash-textarea { width: 100%; min-height: 70px; padding: 9px 10px; border: 1px solid var(--theme-border-soft); border-radius: 10px; background: var(--theme-soft); color: var(--theme-text); font: inherit; font-size: 10px; line-height: 1.6; resize: vertical; box-sizing: border-box; }
+.splash-image-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.splash-scheme-save { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.splash-scheme-save input { min-width: 0; padding: 9px 10px; border: 1px solid var(--theme-border-soft); border-radius: 10px; background: var(--theme-soft); color: var(--theme-text); font: inherit; font-size: 10px; }
+.splash-scheme-save button, .splash-scheme-item button { padding: 8px 10px; border: 1px solid var(--theme-border-soft); border-radius: 9px; background: var(--theme-soft); color: var(--theme-primary); font-size: 9px; font-weight: 800; cursor: pointer; }
+.splash-scheme-save button { background: var(--theme-primary); color: var(--theme-inverse); }
+.splash-scheme-list { display: flex; flex-direction: column; gap: 7px; }
+.splash-scheme-item { display: flex; align-items: center; gap: 7px; padding: 9px 10px; border: 1px solid var(--theme-border-soft); border-radius: 10px; background: var(--theme-surface); }
+.splash-scheme-item > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.splash-scheme-item strong { overflow: hidden; color: var(--theme-text-strong); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.splash-scheme-item small { color: var(--theme-muted); font-size: 8.5px; }
+.splash-scheme-item .danger-text { color: var(--theme-accent-warm); }
+@media (max-width: 560px) {
+  .splash-preset-grid, .splash-color-grid, .splash-field-grid { grid-template-columns: 1fr; }
+  .splash-scheme-save { grid-template-columns: 1fr; }
+}
+.custom-font-textarea{min-height:76px;resize:vertical;font-family:monospace;line-height:1.5}
+.font-preset-save{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:8px}.font-preset-save input{min-width:0;padding:8px 9px;border:1px solid var(--theme-border-soft);border-radius:9px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:10px}.font-preset-save button{border:0;border-radius:9px;background:var(--theme-primary);color:var(--theme-inverse);font-size:9px;font-weight:800;cursor:pointer}
+.font-preset-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}.font-preset-item{display:flex;align-items:stretch;gap:5px;padding:5px;border:1px solid var(--theme-border-soft);border-radius:10px;background:var(--theme-soft)}.font-preset-item.active{border-color:var(--theme-primary)}.font-preset-apply{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:5px 7px;border:0;background:transparent;color:var(--theme-text);text-align:left;cursor:pointer}.font-preset-apply strong{font-size:10px}.font-preset-apply small{overflow:hidden;color:var(--theme-muted);font-size:8px;text-overflow:ellipsis;white-space:nowrap}.font-preset-delete{flex:none;width:32px;border:0;border-radius:9px;background:var(--theme-danger-surface,var(--theme-soft));color:var(--theme-accent-warm);font-size:9px;font-weight:800;cursor:pointer}
 </style>
-

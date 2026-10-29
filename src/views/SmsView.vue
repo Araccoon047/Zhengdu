@@ -1,15 +1,19 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { settings } from '../settings'
-import { store } from '../store'
+import { go, store } from '../store'
+import { formatWishDate, formatWishPrice, requestWishOrderFocus } from '../wishlist'
 import { chatBackgroundStyle as makeChatBackgroundStyle } from '../background-style'
 import { cropImage } from '../image-crop'
 import { imageFileToDataUrl } from '../image-utils'
+import { avatarFrameStyle } from '../avatar-frame-style'
 import StickerPickerDialog from '../components/StickerPickerDialog.vue'
 import ActionGlyph from '../components/ActionGlyph.vue'
 import LineGlyph from '../components/LineGlyph.vue'
+import SafeImage from '../components/SafeImage.vue'
 import { CHAT_TOOL_CATALOG, isChatToolEnabled } from '../chat-tools'
 import { isAiScopeEnabled, requestAiInterpretation } from '../ai'
+import { languageLabel, translateText } from '../translation'
 import {
   DEFAULT_NUDGE_TEXTS,
   allNudgeSymbols,
@@ -26,6 +30,7 @@ import {
   forwardMessages,
   groupById,
   groupMembers,
+  giftNameOptionsForContact,
   markRead,
   openGroup,
   recallMessage,
@@ -40,6 +45,12 @@ import {
   triggerProactiveForActiveChat,
   unreadOf,
   updateGroup,
+  sendGroupMemberMessage,
+  startGroupCall,
+  joinGroupCall,
+  leaveGroupCall,
+  endGroupCall,
+  deleteGroup,
 } from '../chat'
 
 const GIFT_CAT_COLOR = {
@@ -62,15 +73,44 @@ const activeId = computed({
 const activeGroup = computed(() => groupById(chatState.activeGroupId))
 const active = computed(() => activeGroup.value || contactById(activeId.value))
 const activeIsGroup = computed(() => Boolean(activeGroup.value))
+const chatMessageGap = computed(() => {
+  const skin = settings.chatBubbleSkin
+  if (skin === 'xiemao' || skin === 'xiemao-reverse') return '20px'
+  if (skin === 'shuise') return '25px'
+  if (skin === 'baitu') return '23px'
+  return '15px'
+})
 const selectingCards = computed(() => {
   if (!active.value) return false
   return activeIsGroup.value
     ? chatState.selectingGroupId === active.value.id
     : chatState.selectingContactId === active.value.id
 })
+const MESSAGE_PAGE_SIZE = 80
 const draft = ref('')
 const chatRef = ref(null)
 const chatField = ref(null)
+const visibleMessageLimit = ref(MESSAGE_PAGE_SIZE)
+const visibleMessages = computed(() => {
+  const messages = active.value?.messages || []
+  const limit = visibleMessageLimit.value
+  return messages.length > limit ? messages.slice(-limit) : messages
+})
+const hiddenMessageCount = computed(() => Math.max(0, (active.value?.messages?.length || 0) - visibleMessageLimit.value))
+const visibleMessageTimeIds = computed(() => {
+  const visibleIds = new Set()
+  let anchorDate = null
+  for (const message of visibleMessages.value) {
+    const date = messageDate(message)
+    const crossedDay = anchorDate && calendarDayNumber(date) !== calendarDayNumber(anchorDate)
+    const elapsed = anchorDate ? date.getTime() - anchorDate.getTime() : 0
+    if (!anchorDate || crossedDay || elapsed < 0 || elapsed >= 5 * 60 * 1000) {
+      visibleIds.add(message.id)
+      anchorDate = date
+    }
+  }
+  return visibleIds
+})
 
 const menuOpen = ref(false)
 const stickerOpen = ref(false)
@@ -90,10 +130,18 @@ const amount = ref('')
 const note = ref('')
 const placeName = ref('')
 const giftName = ref('')
+const groupGiftRecipientId = ref('')
+const groupTransferRecipientId = ref('')
+const giftPrice = ref('')
+const groupMembersForTools = computed(() => activeIsGroup.value ? groupMembers(active.value) : [])
+const groupGiftRecipient = computed(() => groupMembersForTools.value.find((member) => member.id === groupGiftRecipientId.value) || groupMembersForTools.value[0] || null)
+const groupTransferRecipient = computed(() => groupMembersForTools.value.find((member) => member.id === groupTransferRecipientId.value) || groupMembersForTools.value[0] || null)
+const giftNameOptions = computed(() => giftNameOptionsForContact(activeIsGroup.value ? groupGiftRecipient.value : active.value))
 const photoInput = ref(null)
 const nudgeOpen = ref(false)
 const nudgeText = ref(DEFAULT_NUDGE_TEXTS[0])
 const nudgeSymbol = ref('✦')
+const nudgeGroupContactId = ref('')
 const customNudgeSymbolInput = ref('')
 const customNudgeTextInput = ref('')
 const photoPreviewSrc = ref('')
@@ -107,6 +155,7 @@ const decisionCount = ref(settings.chatTools?.decisionDefaultCount || 1)
 const decisionDelay = ref(settings.chatTools?.decisionDefaultSeconds || 2)
 const decisionThinking = ref(false)
 const decisionResult = ref('')
+const decisionGroupContactIds = ref([])
 const searchKeyword = ref('')
 const searchFrom = ref('')
 const searchTo = ref('')
@@ -193,6 +242,17 @@ const selectedMemberIds = ref([])
 const optionsOpen = ref(false)
 const optionsTarget = ref(null)
 const groupDraft = ref(null)
+const groupCallPickerOpen = ref(false)
+const groupCallPanelOpen = ref(false)
+const groupCallKind = ref('voice')
+const groupCallSelectedIds = ref([])
+const activeGroupCall = computed(() => (
+  chatState.call?.groupId && activeGroup.value?.id === chatState.call.groupId ? chatState.call : null
+))
+const groupCallParticipantCount = computed(() => (
+  (activeGroupCall.value?.joinedMemberIds?.length || 0) + (activeGroupCall.value?.userJoined ? 1 : 0)
+))
+const groupCallTitle = computed(() => `${(activeGroupCall.value?.kind || groupCallKind.value) === 'video' ? '视频' : '语音'}群通话`)
 
 const selectedMessages = computed(() => {
   if (!active.value) return []
@@ -266,16 +326,6 @@ function formatConversationTime(message) {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${time}`
 }
 
-function shouldShowConversationTime(message, previous) {
-  if (!previous) return true
-  const currentDate = messageDate(message)
-  const previousDate = messageDate(previous)
-  return (
-    calendarDayNumber(currentDate) !== calendarDayNumber(previousDate) ||
-    String(message?.time || '') !== String(previous?.time || '')
-  )
-}
-
 function previewOf(c) {
   const m = lastMsg(c)
   if (m.type === 'transfer') return `[转账] ¥${m.amount}`
@@ -284,6 +334,7 @@ function previewOf(c) {
   if (m.type === 'location') return '[位置]'
   if (m.type === 'file') return '[文件]'
   if (m.type === 'gift') return '[礼物]'
+  if (m.type === 'wishOrder') return `[许愿订单] ${m.wishOrder?.no || ''}`.trim()
   if (m.type === 'call') return m.text
   if (m.type === 'sticker') return '[表情包]'
   if (m.type === 'voice') return m.text || '[语音]'
@@ -292,6 +343,17 @@ function previewOf(c) {
 
 function avatarImageOf(contact) {
   return contact?.avatarImage || ''
+}
+
+function avatarFrameSkinOf(contact) {
+  return String(contact?.avatarFrameSkin || settings.contactAvatarFrameSkin || 'none')
+}
+
+function messageAvatarFrameSkin(message) {
+  if (!message) return 'none'
+  if (message.from === 'me') return settings.userAvatarFrameSkin || 'none'
+  if (activeIsGroup.value) return avatarFrameSkinOf(contactById(message.senderId))
+  return avatarFrameSkinOf(active.value)
 }
 
 function meAvatarImage() {
@@ -315,14 +377,54 @@ function scrollBottom() {
     if (el) el.scrollTop = el.scrollHeight
   })
 }
+
+function loadOlderMessages() {
+  const el = chatRef.value
+  const previousHeight = el?.scrollHeight || 0
+  const previousTop = el?.scrollTop || 0
+  const total = active.value?.messages?.length || 0
+  visibleMessageLimit.value = Math.min(total, visibleMessageLimit.value + MESSAGE_PAGE_SIZE)
+  nextTick(() => {
+    if (!chatRef.value) return
+    chatRef.value.scrollTop = chatRef.value.scrollHeight - previousHeight + previousTop
+  })
+}
+const NUDGE_TEXTS_PER_PAGE = 6
+const nudgeTextPage = ref(0)
+const nudgeTextPageCount = computed(() => Math.max(1, Math.ceil(nudgeTexts.value.length / NUDGE_TEXTS_PER_PAGE)))
+const visibleNudgeTexts = computed(() => {
+  const start = nudgeTextPage.value * NUDGE_TEXTS_PER_PAGE
+  return nudgeTexts.value.slice(start, start + NUDGE_TEXTS_PER_PAGE)
+})
+function changeNudgeTextPage(offset) {
+  nudgeTextPage.value = (nudgeTextPage.value + offset + nudgeTextPageCount.value) % nudgeTextPageCount.value
+}
+
 const nudgeTexts = computed(() => allNudgeTexts())
 const nudgeSymbols = computed(() => allNudgeSymbols())
-const nudgeTargetName = computed(() =>
-  activeIsGroup.value ? '大家' : nameOf(active.value)
-)
+const nudgeTargetContact = computed(() => groupMembersForTools.value.find((member) => member.id === nudgeGroupContactId.value) || groupMembersForTools.value[0] || null)
+const nudgeTargetName = computed(() => activeIsGroup.value ? (nudgeTargetContact.value ? nameOf(nudgeTargetContact.value) : '大家') : nameOf(active.value))
 const nudgePreview = computed(() =>
   outgoingNudgeText(nudgeText.value, nudgeSymbol.value, nudgeTargetName.value)
 )
+function wishMessageStatusLabel(status) {
+  return {
+    pending: '待接受',
+    accepted: '待完成',
+    completed: '已完成',
+    rejected: '已拒绝',
+  }[status] || status
+}
+function wishMessageSummary(message) {
+  return (message.wishOrder?.items || []).map((item) => `${item.name} × ${item.qty}`).join('；')
+}
+function openWishOrderMessage(message) {
+  const id = String(message?.wishOrder?.id || '')
+  if (!id) return
+  requestWishOrderFocus(id)
+  go('wishlist')
+}
+
 const chatPlaceholder = computed(() => {
   if (batchSendMode.value) {
     return settings.enterForNewline
@@ -512,6 +614,65 @@ function createGroupChat() {
   openGroupChat(group)
 }
 
+function flashChatNotice(message) {
+  chatNotice.value = message
+  window.setTimeout(() => {
+    if (chatNotice.value === message) chatNotice.value = ''
+  }, 1600)
+}
+
+function openGroupCallPicker(kind) {
+  menuOpen.value = false
+  if (!activeIsGroup.value || !active.value) return
+  if (chatState.call) {
+    flashChatNotice('当前已有正在进行的通话')
+    return
+  }
+  groupCallKind.value = kind === 'video' ? 'video' : 'voice'
+  groupCallSelectedIds.value = groupMembersForTools.value.map((member) => member.id)
+  groupCallPickerOpen.value = true
+}
+
+function toggleGroupCallMember(id) {
+  groupCallSelectedIds.value = groupCallSelectedIds.value.includes(id)
+    ? groupCallSelectedIds.value.filter((item) => item !== id)
+    : [...groupCallSelectedIds.value, id]
+}
+
+function confirmGroupCall() {
+  if (!activeIsGroup.value || !active.value) return
+  if (!groupCallSelectedIds.value.length) {
+    flashChatNotice('至少选择一位群成员')
+    return
+  }
+  const started = startGroupCall(active.value.id, groupCallSelectedIds.value, groupCallKind.value)
+  if (!started) {
+    flashChatNotice('通话发起失败，请稍后重试')
+    return
+  }
+  groupCallPickerOpen.value = false
+}
+
+function openGroupCallPanel() {
+  if (!activeGroupCall.value) return
+  groupCallPanelOpen.value = true
+}
+
+function joinActiveGroupCall() {
+  if (joinGroupCall()) groupCallPanelOpen.value = true
+}
+
+function leaveActiveGroupCall() {
+  leaveGroupCall()
+  if (!chatState.call) groupCallPanelOpen.value = false
+}
+
+function endActiveGroupCall() {
+  endGroupCall()
+  groupCallPanelOpen.value = false
+}
+
+
 function openOptions(conversation) {
   optionsTarget.value = conversation
   if (conversation.kind === 'group') {
@@ -520,6 +681,8 @@ function openOptions(conversation) {
       name: group.name,
       chatBackground: group.chatBackground || '',
       chatBackgroundOpacity: group.chatBackgroundOpacity ?? 60,
+      avatarImage: group.avatarImage || '',
+      memberIds: [...(group.memberIds || [])],
     }
   } else {
     groupDraft.value = null
@@ -551,12 +714,28 @@ async function pickGroupBackground(event) {
   if (!file || !groupDraft.value) return
   const result = await cropImage(file, {
     title: '裁剪群聊背景',
-    aspectRatio: 16 / 9,
+    aspectRatio: 9 / 16,
+    lockAspect: true,
     shape: 'rect',
     maxSide: 1600,
     quality: 0.84,
   })
   if (result) groupDraft.value.chatBackground = result
+}
+
+async function pickGroupAvatar(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !groupDraft.value) return
+  const result = await cropImage(file, {
+    title: '裁剪群头像',
+    aspectRatio: 1,
+    lockAspect: true,
+    shape: 'circle',
+    maxSide: 512,
+    quality: 0.88,
+  })
+  if (result) groupDraft.value.avatarImage = result
 }
 
 function groupBgStyle() {
@@ -568,13 +747,37 @@ function groupBgStyle() {
   }
 }
 
+function toggleGroupDraftMember(contactId) {
+  if (!groupDraft.value) return
+  const ids = new Set(groupDraft.value.memberIds || [])
+  if (ids.has(contactId)) ids.delete(contactId)
+  else ids.add(contactId)
+  groupDraft.value.memberIds = [...ids]
+}
+
+function removeSelectedGroup() {
+  const target = optionsTarget.value
+  if (!target || target.kind !== 'group') return
+  if (!window.confirm(`确定解散并删除群聊“${target.item?.name || '群聊'}”吗？聊天记录也会一并删除。`)) return
+  deleteGroup(target.id)
+  optionsOpen.value = false
+  if (activeIsGroup.value && active.value?.id === target.id) closeChat()
+}
+
 function saveGroupOptions() {
   const target = optionsTarget.value
   if (!target || target.kind !== 'group' || !groupDraft.value) return
+  const memberIds = [...new Set(groupDraft.value.memberIds || [])].filter((id) => contactById(id))
+  if (memberIds.length < 2) {
+    window.alert('群聊至少需要两位联系人')
+    return
+  }
   updateGroup(target.id, {
     name: groupDraft.value.name.trim() || '群聊',
     chatBackground: groupDraft.value.chatBackground,
     chatBackgroundOpacity: groupDraft.value.chatBackgroundOpacity,
+    avatarImage: groupDraft.value.avatarImage || '',
+    memberIds,
   })
   target.item.name = groupDraft.value.name.trim() || '群聊'
   optionsOpen.value = false
@@ -633,11 +836,24 @@ function startDecision() {
     decisionThinking.value = false
     toolHistory.value = [{ id: `decision-${Date.now()}`, question, result, ts: Date.now() }, ...toolHistory.value].slice(0, settings.chatTools?.decisionHistoryLimit || 30)
     saveToolHistory()
-    sendIncomingText(`关于「${question}」，我选：${result}`)
+    if (activeIsGroup.value && active.value) {
+      const selected = groupMembersForTools.value.filter((member) => decisionGroupContactIds.value.includes(member.id))
+      const results = selected.map((member) => `${nameOf(member)}：${result}`)
+      for (const member of selected) sendGroupMemberMessage(active.value.id, member.id, `关于「${question}」，我选：${result}`)
+      decisionResult.value = results.join('；')
+    } else {
+      sendIncomingText(`关于「${question}」，我选：${result}`)
+    }
   }, wait)
 }
 function sendDecisionToChat() {
   if (!decisionResult.value) return
+  if (activeIsGroup.value && active.value) {
+    const [memberId] = decisionGroupContactIds.value
+    if (memberId) sendGroupMemberMessage(active.value.id, memberId, `帮我决定的结果：${decisionResult.value}`)
+    scrollBottom()
+    return
+  }
   sendIncomingText(`帮我决定的结果：${decisionResult.value}`)
 }
 function jumpToSearchResult(message) {
@@ -658,6 +874,18 @@ function makeProactive() {
   scrollBottom()
 }
 
+function messageSourceLabels(message) {
+  if (!message || message.from !== 'other') return []
+  if (Array.isArray(message.sourceLabels) && message.sourceLabels.length) {
+    return [...new Set(message.sourceLabels.filter(Boolean))]
+  }
+  const labels = []
+  if (message.dictionary === true) labels.push('拼词')
+  if (message.sourceCategory) labels.push(message.sourceCategory)
+  if (message.sourceGroup) labels.push(message.sourceGroup)
+  return [...new Set(labels)]
+}
+
 function messageText(message) {
   if (!message) return ''
   if (message.type === 'sticker') return '[表情包]'
@@ -666,6 +894,20 @@ function messageText(message) {
   if (message.type === 'transfer') return `[转账] ¥${message.amount} ${message.text || ''}`
   if (message.type === 'redpacket') return `[红包] ¥${message.amount} ${message.text || ''}`
   return message.text || ''
+}
+
+function translatableMessageText(message) {
+  if (!message || message.type === 'sticker') return ''
+  if (['photo', 'voice', 'transfer', 'redpacket'].includes(message.type)) {
+    return String(message.text || '').trim()
+  }
+  return String(message.text || '').trim()
+}
+
+function onComposerFocus() {
+  stickerOpen.value = false
+  menuOpen.value = false
+  scrollBottom()
 }
 
 function senderNameFor(message) {
@@ -715,6 +957,12 @@ function jumpToQuotedMessage(quote) {
     setTimeout(() => (chatNotice.value = ''), 1400)
     return
   }
+  const targetIndex = messages.findIndex((message) => message.id === targetMessage.id)
+  if (targetIndex >= 0 && messages.length - targetIndex > visibleMessageLimit.value) {
+    visibleMessageLimit.value = Math.min(messages.length, Math.ceil((messages.length - targetIndex) / MESSAGE_PAGE_SIZE) * MESSAGE_PAGE_SIZE)
+    nextTick(() => jumpToQuotedMessage(quote))
+    return
+  }
 
   const target = [...chatRef.value.querySelectorAll('[data-message-id]')].find(
     (node) => node.dataset.messageId === targetMessage.id
@@ -759,32 +1007,29 @@ async function copyMessage() {
 
 async function translateMessage() {
   const message = messageTarget.value
-  const text = messageText(message)
-  const chinese = /[\u4e00-\u9fff]/.test(text)
+  const text = translatableMessageText(message)
   inlineActionMode.value = 'result'
   infoTitle.value = '翻译'
   infoText.value = ''
 
-  if (!window.Translator?.create) {
+  if (!text) {
     infoLoading.value = false
-    infoText.value = '当前浏览器不支持本地翻译。此网站为纯静态版本，不连接翻译服务器。'
+    infoText.value = '这条消息没有可翻译的文字内容。'
     return
   }
 
   infoLoading.value = true
   try {
-    const translator = await window.Translator.create({
-      sourceLanguage: chinese ? 'zh' : 'en',
-      targetLanguage: chinese ? 'en' : 'zh',
-    })
-    const translated = await translator.translate(text)
-    infoText.value = translated || '浏览器没有返回翻译结果。'
-  } catch (e) {
-    infoText.value = '当前浏览器无法使用本地翻译能力。'
+    const result = await translateText(text, { aiConfig: settings.ai })
+    infoTitle.value = `翻译 · ${languageLabel(result.sourceLanguage)} → ${languageLabel(result.targetLanguage)}`
+    infoText.value = result.text
+  } catch (error) {
+    infoText.value = error.message || '翻译失败，请检查网络后重试。'
   } finally {
     infoLoading.value = false
   }
 }
+
 async function interpretMessage() {
   const message = messageTarget.value
   const text = messageText(message)
@@ -916,6 +1161,9 @@ function openSheet(kind) {
   note.value = ''
   placeName.value = ''
   giftName.value = ''
+  giftPrice.value = ''
+  groupGiftRecipientId.value = activeIsGroup.value ? (groupMembersForTools.value[0]?.id || '') : ''
+  groupTransferRecipientId.value = activeIsGroup.value ? (groupMembersForTools.value[0]?.id || '') : ''
 }
 
 function confirmSheet() {
@@ -929,6 +1177,9 @@ function confirmSheet() {
       type: 'transfer',
       amount: value.toFixed(2),
       text: note.value.trim() || '一点心意',
+      transferRecipientId: activeIsGroup.value ? groupTransferRecipient.value?.id || '' : 'me',
+      transferRecipientName: activeIsGroup.value ? nameOf(groupTransferRecipient.value) : '我',
+      transferRecipientKind: activeIsGroup.value ? 'contact' : 'user',
     })
   } else if (kind === 'location') {
     const place = placeName.value.trim()
@@ -937,16 +1188,21 @@ function confirmSheet() {
   } else if (kind === 'gift') {
     const name = giftName.value.trim()
     if (!name) return
+    const option = giftNameOptions.value.find((item) => item.text === name)
+    const price = Math.max(0, Number(giftPrice.value) || 0)
     dispatchOutgoing({
       type: 'gift',
       text: name,
       giftName: name,
       note: note.value.trim(),
-      giftWish: note.value.trim() || '一点心意',
-      giftEmoji: '🎁',
-      giftPrice: 0,
+      giftWish: note.value.trim() || '一份小小的心意',
+      giftEmoji: option?.emoji || '🎁',
+      giftPrice: price,
       giftCat: 'custom',
       giftSelf: false,
+      giftRecipientId: activeIsGroup.value ? groupGiftRecipient.value?.id || '' : '',
+      giftRecipientName: activeIsGroup.value ? nameOf(groupGiftRecipient.value) : '',
+      giftSourceGroup: option ? `${option.source} · 礼物` : '我的字卡 · 礼物',
     })
   }
 
@@ -986,7 +1242,9 @@ function openNudgeCard() {
   if (!active.value) return
   menuOpen.value = false
   nudgeText.value = DEFAULT_NUDGE_TEXTS[0]
+  nudgeTextPage.value = 0
   nudgeSymbol.value = '✦'
+  nudgeGroupContactId.value = activeIsGroup.value ? (groupMembersForTools.value[0]?.id || '') : ''
   customNudgeSymbolInput.value = ''
   customNudgeTextInput.value = ''
   nudgeOpen.value = true
@@ -998,6 +1256,7 @@ function addCustomNudgeText() {
   if (!Array.isArray(settings.customNudgeTexts)) settings.customNudgeTexts = []
   if (!nudgeTexts.value.includes(value)) settings.customNudgeTexts.push(value)
   nudgeText.value = value
+  nudgeTextPage.value = Math.floor(Math.max(0, nudgeTexts.value.length - 1) / NUDGE_TEXTS_PER_PAGE)
   customNudgeTextInput.value = ''
 }
 function addCustomNudgeSymbol() {
@@ -1011,7 +1270,7 @@ function addCustomNudgeSymbol() {
 
 function confirmNudge() {
   if (!active.value) return
-  dispatchOutgoing({ type: 'nudge', text: nudgePreview.value })
+  dispatchOutgoing({ type: 'nudge', text: nudgePreview.value, nudgeTargetId: activeIsGroup.value ? nudgeTargetContact.value?.id || '' : '', nudgeTargetName: nudgeTargetName.value })
   nudgeOpen.value = false
   menuOpen.value = false
   scrollBottom()
@@ -1020,11 +1279,12 @@ function confirmNudge() {
 function startCall(kind) {
   if (!active.value) return
   menuOpen.value = false
-  const started = startOutgoingCall(kind)
-  if (!started) {
-    chatNotice.value = '当前已有正在进行的通话'
-    setTimeout(() => (chatNotice.value = ''), 1400)
+  if (activeIsGroup.value) {
+    openGroupCallPicker(kind)
+    return
   }
+  const started = startOutgoingCall(kind)
+  if (!started) flashChatNotice('当前已有正在进行的通话')
 }
 watch(
   () => store.groupCreateRequest,
@@ -1053,6 +1313,7 @@ watch(
 watch(
   () => active.value?.id || '',
   () => {
+    visibleMessageLimit.value = MESSAGE_PAGE_SIZE
     if (batchSending.value) return
     batchSendMode.value = false
     stagedOutgoingMessages.value = []
@@ -1110,10 +1371,10 @@ onMounted(() => {
           }"
           @click="openConversation(conversation)"
         >
-          <span class="avatar" :style="{ background: conversation.item.color }">
+          <span class="avatar" :class="{ 'echoes-avatar-other': conversation.kind === 'contact' }" :data-avatar-frame-skin-id="conversation.kind === 'contact' ? avatarFrameSkinOf(conversation.item) : 'none'" :style="{ background: conversation.item.color }">
             <img v-if="avatarImageOf(conversation.item)" :src="avatarImageOf(conversation.item)" alt="" />
             <template v-else>{{ conversation.item.avatar }}</template>
-            <img v-if="conversation.item.avatarFrame" class="avatar-frame" :src="conversation.item.avatarFrame" alt="" />
+            <img v-if="conversation.item.avatarFrame" class="avatar-frame" :src="conversation.item.avatarFrame" :style="avatarFrameStyle(conversation.item)" alt="" />
           </span>
           <span class="conv-main">
             <span class="conv-top">
@@ -1131,19 +1392,32 @@ onMounted(() => {
         <template v-if="active">
           <div class="echoes-chat-header chat-head">
             <button class="chat-back" type="button" aria-label="返回联系人列表" @click="backToConversationList"><LineGlyph type="back" /></button>
-            <span class="avatar chat-contact-avatar" :style="{ background: active.color }">
+            <span class="avatar chat-contact-avatar" :class="{ 'echoes-avatar-other': !activeIsGroup }" :data-avatar-frame-skin-id="activeIsGroup ? 'none' : avatarFrameSkinOf(active)" :style="{ background: active.color }">
               <img v-if="avatarImageOf(active)" :src="avatarImageOf(active)" alt="" />
               <template v-else>{{ active.avatar }}</template>
-              <img v-if="active.avatarFrame" class="avatar-frame" :src="active.avatarFrame" alt="" />
+              <img v-if="active.avatarFrame" class="avatar-frame" :src="active.avatarFrame" :style="avatarFrameStyle(active)" alt="" />
             </span>
             <div class="chat-head-main">
               <h2>{{ nameOf(active) }}</h2>
               <span v-if="selectingCards">{{ settings.typingIndicatorText || '正在挑选字卡' }}</span>
-              <span v-else-if="activeIsGroup">{{ groupMembers(active).length }} 位成员</span>
+              <span v-else-if="activeIsGroup">{{ groupMembers(active).length + 1 }} 位成员</span>
             </div>
             <button class="chat-head-options" type="button" aria-label="聊天设置" @click="openActiveOptions">···</button>
           </div>
 
+          <button
+            v-if="activeGroupCall"
+            type="button"
+            class="group-call-banner"
+            @click="openGroupCallPanel"
+          >
+            <span class="group-call-live" aria-hidden="true"></span>
+            <span class="group-call-banner-copy">
+              <strong>{{ groupCallTitle }}</strong>
+              <small>{{ groupCallParticipantCount }} 人 · {{ activeGroupCall.status }}</small>
+            </span>
+            <b>{{ activeGroupCall.userJoined ? '管理' : '进入' }}</b>
+          </button>
           <div v-if="multiSelectMode" class="multi-toolbar">
             <span>已选择 {{ selectedMessageIds.length }} 条</span>
             <button type="button" :disabled="!selectedMessageIds.length" @click="openForward(selectedMessages)">逐条转发</button>
@@ -1155,12 +1429,22 @@ onMounted(() => {
           <div
             ref="chatRef"
             class="chat-scroll"
-            :style="chatBackgroundStyle"
+            :class="{ 'group-chat-scroll': activeIsGroup }"
+            :style="[chatBackgroundStyle, { '--chat-message-gap': chatMessageGap }]"
             @click="closeChatPopovers"
           >
-            <template v-for="(m, i) in active.messages" :key="m.id">
+            <button
+              v-if="hiddenMessageCount > 0"
+              class="chat-load-older"
+              type="button"
+              @click.stop="loadOlderMessages"
+            >
+               加载更早记录（{{ hiddenMessageCount }} 条）
+            </button>
+            <template v-for="m in visibleMessages" :key="m.id">
+              <div class="chat-message-item" :data-message-id="m.id">
               <div
-                v-if="shouldShowConversationTime(m, i > 0 ? active.messages[i - 1] : null)"
+                v-if="visibleMessageTimeIds.has(m.id)"
                 class="echoes-timestamp"
               >
                 {{ formatConversationTime(m) }}
@@ -1214,7 +1498,11 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div v-else-if="m.type === 'nudge'" class="nudge-row" :data-message-id="m.id">
+              <div v-else-if="m.type === 'nudge'" class="nudge-row" :class="`status-skin-${settings.statusBubbleSkin}`" :data-message-id="m.id">
+                <span>{{ m.text }}</span>
+              </div>
+
+              <div v-else-if="m.type === 'readReceipt'" class="nudge-row read-receipt-row" :class="`status-skin-${settings.statusBubbleSkin}`" :data-message-id="m.id">
                 <span>{{ m.text }}</span>
               </div>
 
@@ -1230,6 +1518,7 @@ onMounted(() => {
                     'media-message': m.type === 'sticker' || m.type === 'photo',
                     'transfer-message': m.type === 'transfer' || m.type === 'redpacket',
                     'gift-message': m.type === 'gift',
+                    'has-msg-meta': messageSourceLabels(m).length > 0,
                   },
                 ]"
                 :data-message-id="m.id"
@@ -1237,6 +1526,7 @@ onMounted(() => {
                 <span
                   class="avatar"
                   :class="m.from === 'me' ? 'echoes-avatar-user' : 'echoes-avatar-other'"
+                  :data-avatar-frame-skin-id="messageAvatarFrameSkin(m)"
                   :style="m.from === 'other' ? { background: activeIsGroup ? (m.senderColor || active.color) : active.color } : {}"
                 >
                   <img
@@ -1254,12 +1544,14 @@ onMounted(() => {
                     v-if="m.from === 'other' && (activeIsGroup ? m.senderAvatarFrame : active.avatarFrame)"
                     class="avatar-frame"
                     :src="activeIsGroup ? m.senderAvatarFrame : active.avatarFrame"
+                    :style="avatarFrameStyle(activeIsGroup ? { avatarFrameOffsetX: m.senderAvatarFrameOffsetX, avatarFrameOffsetY: m.senderAvatarFrameOffsetY, avatarFrameScale: m.senderAvatarFrameScale } : active)"
                     alt=""
                   />
                   <img
                     v-else-if="m.from === 'me' && settings.userAvatarFrame"
                     class="avatar-frame"
                     :src="settings.userAvatarFrame"
+                    :style="avatarFrameStyle({ avatarFrameOffsetX: settings.userAvatarFrameOffsetX, avatarFrameOffsetY: settings.userAvatarFrameOffsetY, avatarFrameScale: settings.userAvatarFrameScale })"
                     alt=""
                   />
                 </span>
@@ -1292,22 +1584,36 @@ onMounted(() => {
                     {{ m.text }}
                   </div>
 
+                <button
+                  v-else-if="m.type === 'wishOrder'"
+                  class="wish-order-message-card"
+                  type="button"
+                  @click.stop="openWishOrderMessage(m)"
+                >
+                  <span class="wish-order-message-head"><b>许愿订单</b><small>{{ wishMessageStatusLabel(m.wishOrder?.status) }}</small></span>
+                  <strong>我想要这个！</strong>
+                  <span class="wish-order-message-items">{{ wishMessageSummary(m) }}</span>
+                  <span class="wish-order-message-foot"><time>{{ formatWishDate(m.wishOrder?.createdAt) }}</time><em>{{ formatWishPrice(m.wishOrder?.total) }}</em></span>
+                </button>
                 <div v-else-if="m.type === 'sticker'" class="sticker-message">
-                  <img :src="m.src" alt="表情包" />
+                  <SafeImage :src="m.src" alt="表情包" class="message-url-image" />
                 </div>
 
                 <!-- 转账 / 红包：套用发起方气泡角饰 -->
                 <div
                   v-else-if="m.type === 'transfer' || m.type === 'redpacket'"
                   class="decorated-card"
-                  :class="m.from === 'me' ? 'from-me' : 'from-other'"
+                  :class="[m.from === 'me' ? 'from-me' : 'from-other', `transfer-decoration-${settings.transferCardSkin}`]"
                 >
                   <div
                     class="echoes-transfer-card transfer-card"
-                    :class="{ 'redpacket-card': m.type === 'redpacket' }"
+                    :class="[`transfer-skin-${settings.transferCardSkin}`, { 'redpacket-card': m.type === 'redpacket' }]"
                   >
                     <div class="transfer-top">
                       {{ m.type === 'redpacket' ? '红包' : '转账' }}
+                    </div>
+                    <div v-if="m.type === 'transfer' && m.transferRecipientName" class="transfer-recipient">
+                      {{ m.from === 'me' ? '转给 ' + m.transferRecipientName : '转给你' }}
                     </div>
                     <div class="transfer-amount">¥ {{ m.amount }}</div>
                     <div class="transfer-note">{{ m.text }}</div>
@@ -1321,7 +1627,7 @@ onMounted(() => {
                   :class="m.from === 'me' ? 'from-me' : 'from-other'"
                 >
                   <div class="echoes-photo-card photo-card">
-                    <img :src="m.src" :alt="m.text" @click.stop="openPhotoPreview(m)" />
+                    <SafeImage :src="m.src" :alt="m.text" class="message-url-image" @click.stop="openPhotoPreview(m)" />
                     <div class="photo-caption">{{ m.text }}</div>
                   </div>
                 </div>
@@ -1348,20 +1654,27 @@ onMounted(() => {
                 <div v-else-if="m.type === 'gift'" class="msg-gift">
                   <div class="msg-gift-card">
                     <div class="msg-gift-emoji" :style="{ background: GIFT_CAT_COLOR[m.giftCat] || GIFT_CAT_COLOR.default }">
-                      <img v-if="m.giftImg" class="msg-gift-img" :src="m.giftImg" alt="" />
+                      <SafeImage v-if="m.giftImg" class="msg-gift-img message-url-image" :src="m.giftImg" alt="礼物图片" />
                       <template v-else>{{ m.giftEmoji || '🎁' }}</template>
                     </div>
                     <div class="msg-gift-name">{{ m.giftName || m.text || '礼物' }}</div>
                     <div class="msg-gift-divider"></div>
                     <div class="msg-gift-wish">“{{ m.giftWish || m.note || '一点心意' }}”</div>
-                    <div class="msg-gift-foot"><span class="mg-side">{{ m.from === 'me' ? '我 送出' : (m.giftSelf ? 'TA 自己买的' : 'TA 送来') }}</span><span class="msg-gift-price">¥{{ Number(m.giftPrice || 0).toFixed(2) }}</span></div>
+                    <div class="msg-gift-foot"><span class="mg-side">{{ m.from === 'me' ? (m.giftRecipientName ? `我 送给 ${m.giftRecipientName}` : '我 送出') : (m.giftSelf ? 'TA 自己买的' : 'TA 送来') }}</span><span class="msg-gift-price">¥{{ Number(m.giftPrice || 0).toFixed(2) }}</span></div>
                   </div>
                 </div>
 
                   <span v-if="multiSelectMode" class="msg-select-mark" :class="{ active: selectedMessageIds.includes(m.id) }">
                     {{ selectedMessageIds.includes(m.id) ? '✓' : '○' }}
                   </span>
+                  <span
+                    v-if="messageSourceLabels(m).length"
+                    class="msg-meta for-other"
+                  >
+                    <span v-for="label in messageSourceLabels(m)" :key="label" class="msg-source">{{ label }}</span>
+                  </span>
                 </div>
+              </div>
               </div>
             </template>
           </div>
@@ -1416,6 +1729,7 @@ onMounted(() => {
               rows="1"
               maxlength="200"
               :placeholder="chatPlaceholder"
+              @focus="onComposerFocus"
               @keydown.enter="handleComposerEnter"
               @compositionstart="handleComposerCompositionStart"
               @compositionend="handleComposerCompositionEnd"
@@ -1429,7 +1743,7 @@ onMounted(() => {
               aria-label="让对方主动发消息"
               title="让对方主动发消息"
               @click.stop="makeProactive"
-            >···</button>
+            ><span class="proactive-dots" aria-hidden="true"><i></i><i></i><i></i></span></button>
             <button
               class="plus-btn"
               type="button"
@@ -1496,7 +1810,7 @@ onMounted(() => {
             <transition name="fade">
               <div v-if="photoPreviewSrc" class="photo-preview-layer" @click.self="photoPreviewSrc = ''">
                 <button class="photo-preview-close" type="button" aria-label="关闭照片预览" @click="photoPreviewSrc = ''">×</button>
-                <img :src="photoPreviewSrc" alt="照片预览" />
+                <SafeImage :src="photoPreviewSrc" alt="照片预览" class="photo-preview-image" />
               </div>
             </transition>
           </teleport>
@@ -1512,12 +1826,25 @@ onMounted(() => {
                     </div>
                     <button type="button" aria-label="关闭拍一拍" @click="nudgeOpen = false">×</button>
                   </header>
+                  <label v-if="activeIsGroup" class="nudge-group-target">
+                    <span>拍一拍对象</span>
+                    <select v-model="nudgeGroupContactId">
+                      <option v-for="member in groupMembersForTools" :key="member.id" :value="member.id">{{ nameOf(member) }}</option>
+                    </select>
+                  </label>
+                <div v-if="activeIsGroup" class="decision-group-members">
+                  <span>选择参与抉择的群成员</span>
+                  <label v-for="member in groupMembersForTools" :key="member.id">
+                    <input v-model="decisionGroupContactIds" type="checkbox" :value="member.id" />
+                    <b>{{ nameOf(member) }}</b>
+                  </label>
+                </div>
 
                   <div class="nudge-section">
                     <span class="nudge-label">选择文案</span>
                     <div class="nudge-options nudge-text-options">
                       <button
-                        v-for="item in nudgeTexts"
+                        v-for="item in visibleNudgeTexts"
                         :key="item"
                         type="button"
                         :class="{ active: nudgeText === item }"
@@ -1525,6 +1852,11 @@ onMounted(() => {
                       >
                         {{ item }}
                       </button>
+                    </div>
+                    <div v-if="nudgeTextPageCount > 1" class="nudge-pager">
+                      <button type="button" @click="changeNudgeTextPage(-1)">上一页</button>
+                      <span>{{ nudgeTextPage + 1 }} / {{ nudgeTextPageCount }}</span>
+                      <button type="button" @click="changeNudgeTextPage(1)">下一页</button>
                     </div>
                     <div class="nudge-custom-text">
                       <input
@@ -1584,6 +1916,12 @@ onMounted(() => {
                 </div>
 
                 <template v-if="sheet === 'transfer'">
+                  <label v-if="activeIsGroup" class="sheet-field">
+                    <span>转账给</span>
+                    <select v-model="groupTransferRecipientId" class="echoes-chat-input sheet-note">
+                      <option v-for="member in groupMembersForTools" :key="member.id" :value="member.id">{{ nameOf(member) }}</option>
+                    </select>
+                  </label>
                   <div class="amount-row">
                     <span>¥</span>
                     <input
@@ -1619,6 +1957,12 @@ onMounted(() => {
                 </template>
 
                 <template v-else>
+                  <label v-if="activeIsGroup" class="sheet-field">
+                    <span>赠送给</span>
+                    <select v-model="groupGiftRecipientId" class="echoes-chat-input sheet-note">
+                      <option v-for="member in groupMembersForTools" :key="member.id" :value="member.id">{{ nameOf(member) }}</option>
+                    </select>
+                  </label>
                   <label class="sheet-field">
                     <span>礼物名称</span>
                     <input
@@ -1626,7 +1970,24 @@ onMounted(() => {
                       class="echoes-chat-input sheet-note"
                       type="text"
                       maxlength="40"
-                      placeholder="例如：一杯热可可"
+                      list="gift-name-options"
+                      placeholder="选择或输入礼物名称"
+                      @change="giftPrice = String(giftNameOptions.find((item) => item.text === giftName)?.price || giftPrice)"
+                    />
+                    <datalist id="gift-name-options">
+                      <option v-for="item in giftNameOptions" :key="item.source + item.text" :value="item.text">{{ item.emoji }} {{ item.source }}</option>
+                    </datalist>
+                  </label>
+                  <label class="sheet-field">
+                    <span>礼物价格</span>
+                    <input
+                      v-model="giftPrice"
+                      class="echoes-chat-input sheet-note"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputmode="decimal"
+                      placeholder="0.00"
                     />
                   </label>
                 </template>
@@ -1691,6 +2052,12 @@ onMounted(() => {
       <div v-if="optionsOpen && optionsTarget" class="sms-modal-layer" @click.self="optionsOpen = false">
         <div class="sms-modal-card">
           <h3>聊天设置</h3>
+          <template v-if="optionsTarget.kind === 'group' && groupDraft">
+            <div class="group-avatar-editor">
+              <span class="group-avatar-preview"><img v-if="groupDraft.avatarImage" :src="groupDraft.avatarImage" alt="" /><template v-else>群</template></span>
+              <label class="modal-file-button">上传群头像<input type="file" accept="image/*" @change="pickGroupAvatar" /></label>
+            </div>
+          </template>
           <div class="option-row">
             <span>置顶会话</span>
             <button type="button" :class="{ active: optionsTarget.pinned }" @click="togglePinned">{{ optionsTarget.pinned ? '已置顶' : '置顶' }}</button>
@@ -1701,6 +2068,25 @@ onMounted(() => {
           </div>
 
           <template v-if="optionsTarget.kind === 'group' && groupDraft">
+
+            <div class="group-member-manager">
+              <div class="group-member-manager-head">
+                <strong>群成员</strong>
+                <span>含我共 {{ (groupDraft.memberIds?.length || 0) + 1 }} 人</span>
+              </div>
+              <div class="member-select group-member-choices">
+                <label v-for="contact in contacts" :key="contact.id">
+                  <input
+                    type="checkbox"
+                    :checked="groupDraft.memberIds?.includes(contact.id)"
+                    @change="toggleGroupDraftMember(contact.id)"
+                  />
+                  <span>{{ nameOf(contact) }}</span>
+                  <small>{{ groupDraft.memberIds?.includes(contact.id) ? '已在群内' : '点击邀请' }}</small>
+                </label>
+              </div>
+              <p class="group-member-hint">勾选联系人即可邀请入群；取消勾选会将该联系人移出群聊。</p>
+            </div>
             <input v-model="groupDraft.name" type="text" maxlength="30" placeholder="修改群名" />
             <input v-model="groupDraft.chatBackground" type="text" placeholder="群聊背景图片链接" />
             <div class="sms-modal-actions left">
@@ -1719,6 +2105,9 @@ onMounted(() => {
               <input v-model.number="groupDraft.chatBackgroundOpacity" type="range" min="0" max="100" />
               <strong>{{ groupDraft.chatBackgroundOpacity }}%</strong>
             </label>
+            <div class="group-settings-danger">
+              <button type="button" @click="removeSelectedGroup">解散并删除群聊</button>
+            </div>
             <div class="sms-modal-actions">
               <button type="button" @click="optionsOpen = false">取消</button>
               <button type="button" @click="saveGroupOptions">保存群设置</button>
@@ -1727,6 +2116,63 @@ onMounted(() => {
         </div>
       </div>
     </teleport>
+
+    <teleport to="body">
+      <div v-if="groupCallPickerOpen" class="sms-modal-layer" @click.self="groupCallPickerOpen = false">
+        <div class="sms-modal-card group-call-picker">
+          <h3>发起{{ groupCallTitle }}</h3>
+          <p class="group-call-hint">选择要在群聊里呼叫的成员</p>
+          <div class="member-select group-call-member-select">
+            <label v-for="member in groupMembersForTools" :key="member.id">
+              <input
+                type="checkbox"
+                :checked="groupCallSelectedIds.includes(member.id)"
+                @change="toggleGroupCallMember(member.id)"
+              />
+              <span>{{ nameOf(member) }}</span>
+            </label>
+          </div>
+          <div class="sms-modal-actions">
+            <button type="button" @click="groupCallPickerOpen = false">取消</button>
+            <button type="button" :disabled="!groupCallSelectedIds.length" @click="confirmGroupCall">
+              呼叫 {{ groupCallSelectedIds.length }} 人
+            </button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <teleport to="body">
+      <div v-if="groupCallPanelOpen && activeGroupCall" class="sms-modal-layer" @click.self="groupCallPanelOpen = false">
+        <div class="sms-modal-card group-call-manager">
+          <div class="group-call-manager-head">
+            <div>
+              <h3>{{ activeGroup.name }}</h3>
+              <p>{{ groupCallTitle }} · {{ activeGroupCall.status }}</p>
+            </div>
+            <strong>{{ groupCallParticipantCount }} 人</strong>
+          </div>
+          <div class="group-call-member-list">
+            <div v-for="member in groupMembersForTools" :key="member.id" class="group-call-member-row">
+              <span class="group-call-member-avatar" :style="{ background: member.color }">
+                <img v-if="member.avatarImage" :src="member.avatarImage" alt="" />
+                <template v-else>{{ member.avatar }}</template>
+              </span>
+              <span>{{ nameOf(member) }}</span>
+              <b :class="{ online: activeGroupCall.joinedMemberIds.includes(member.id) }">
+                {{ activeGroupCall.joinedMemberIds.includes(member.id) ? '通话中' : '未加入' }}
+              </b>
+            </div>
+          </div>
+          <div class="group-call-manager-actions">
+            <button v-if="!activeGroupCall.userJoined" type="button" class="join" @click="joinActiveGroupCall">加入通话</button>
+            <button v-else type="button" class="leave" @click="leaveActiveGroupCall">退出通话</button>
+            <button type="button" class="end" @click="endActiveGroupCall">结束群通话</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
 
   </section>
 </template>
@@ -1745,14 +2191,14 @@ onMounted(() => {
   top: 50%;
   left: 50%;
   z-index: 3;
-  width: 112%;
-  height: 112%;
+  width: 120%;
+  height: 120%;
   max-width: none;
   object-fit: contain;
   border-radius: 0;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  filter: drop-shadow(0 2px 4px rgba(var(--theme-primary-rgb), 0.12));
+  filter: none;
 }
 
 .conv-panel {
@@ -1764,7 +2210,7 @@ onMounted(() => {
   position: relative;
 }
 
-.chat-scroll {
+.chat-load-older{display:block;margin:10px auto 8px;padding:6px 11px;border:1px solid var(--theme-border-soft);border-radius:999px;background:var(--theme-soft);color:var(--theme-muted);font-size:9px;font-weight:700;cursor:pointer}.chat-scroll {
   position: relative;
   background-color: var(--theme-surface);
 }
@@ -1874,13 +2320,20 @@ onMounted(() => {
 
 .chat-send-btn {
   flex: none;
+  width: 40px;
+  min-width: 40px;
   height: 40px;
-  padding: 0 13px;
+  padding: 0;
   border: 1px solid var(--theme-primary);
-  border-radius: 20px;
+  border-radius: 50%;
   background: var(--theme-primary);
   color: #ffffff;
-  font-size: 11px;
+  display: grid;
+  place-items: center;
+  place-content: center;
+  aspect-ratio: 1;
+  font-size: 15px;
+  line-height: 1;
   font-weight: 800;
   cursor: pointer;
 }
@@ -1909,8 +2362,10 @@ onMounted(() => {
   }
 
   .chat-send-btn {
+    width: 36px;
+    min-width: 36px;
     height: 36px;
-    padding: 0 10px;
+    padding: 0;
   }
 
   .chat-field {
@@ -2053,6 +2508,8 @@ onMounted(() => {
 }
 
 /* 转账卡片 */
+.wish-order-message-card{width:min(250px,calc(100vw - 128px));padding:10px 11px;border:1px solid var(--theme-border-soft);border-radius:12px;background:var(--theme-surface);color:var(--theme-text);display:flex;flex-direction:column;gap:5px;text-align:left;cursor:pointer}
+.wish-order-message-head,.wish-order-message-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}.wish-order-message-head b{color:var(--theme-primary);font-size:9px;letter-spacing:.08em}.wish-order-message-head small{padding:2px 5px;border-radius:5px;background:var(--theme-soft);color:var(--theme-muted);font-size:7.5px}.wish-order-message-card>strong{font-size:12px;color:var(--theme-text-strong)}.wish-order-message-items{color:var(--theme-text);font-size:9px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.wish-order-message-foot{color:var(--theme-muted);font-size:7.5px}.wish-order-message-foot em{color:var(--theme-text-strong);font-size:10px;font-style:normal;font-weight:800}
 .transfer-card {
   position: relative;
   align-self: flex-start;
@@ -2064,6 +2521,7 @@ onMounted(() => {
   justify-content: center;
   overflow: hidden !important;
 }
+.transfer-recipient { margin:-2px 0 3px; color:inherit; font-size:10.5px; opacity:.72; }
 .transfer-top {
   font-size: 11px;
   font-weight: 700;
@@ -2106,6 +2564,12 @@ onMounted(() => {
   aspect-ratio: 1;
   object-fit: cover;
   display: block;
+  border-radius: 14px;
+}
+.photo-card .safe-image-fallback {
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 1;
   border-radius: 14px;
 }
 .photo-caption {
@@ -2301,11 +2765,19 @@ onMounted(() => {
 .nudge-row span {
   padding: 7px 15px;
   border: 1px dashed var(--theme-border);
-  border-radius: 999px;
+  border-radius: 12px;
   background: var(--theme-soft);
   color: var(--theme-accent);
   font-size: 10.5px;
   font-weight: 700;
+}
+.read-receipt-row { animation: none; margin: 10px 0 16px !important; }
+.read-receipt-row span {
+  border-style: solid;
+  border-color: var(--theme-border-soft);
+  border-radius: 12px;
+  color: var(--theme-muted);
+  font-weight: 600;
 }
 
 @keyframes nudge-shake {
@@ -2398,11 +2870,16 @@ onMounted(() => {
   width: 34px;
   height: 34px;
   margin-left: auto;
+  padding: 0;
   border: 1px solid var(--theme-border);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.75);
   color: var(--theme-primary);
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
   font-size: 15px;
+  line-height: 1;
   font-weight: 800;
   cursor: pointer;
 }
@@ -2424,8 +2901,26 @@ onMounted(() => {
 }
 
 .chat-more-btn {
+  padding: 0;
+  place-items: center;
   font-size: 12px;
-  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.proactive-dots {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transform: translateY(-1px);
+}
+.proactive-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  display: block;
 }
 
 .sticker-message img {
@@ -2434,9 +2929,57 @@ onMounted(() => {
   object-fit: contain;
   display: block;
 }
+.sticker-message .safe-image-fallback {
+  width: 128px;
+  height: 128px;
+  min-height: 0;
+}
+.msg-gift-img.safe-image-fallback {
+  width: 84px;
+  height: 84px;
+  min-height: 0;
+  border-radius: 50%;
+}
 
 .msg {
   position: relative;
+}
+
+.chat-scroll .msg.has-msg-meta {
+  margin-bottom: 50px !important;
+}
+
+.msg-meta {
+  position: absolute;
+  left: 52px;
+  right: 10px;
+  bottom: -38px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--theme-muted);
+  font-size: 8px;
+  line-height: 1.2;
+  pointer-events: none;
+  box-shadow: none;
+  filter: none;
+  text-shadow: none;
+}
+
+.msg-meta.for-other { left: 52px; }
+.msg-source {
+  max-width: min(180px, 100%);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--theme-soft);
+  overflow: hidden;
+  color: var(--theme-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: none;
+  filter: none;
+  text-shadow: none;
 }
 
 .msg.media-message {
@@ -2456,6 +2999,36 @@ onMounted(() => {
   color: var(--theme-muted);
   font-size: 9.5px;
   font-weight: 700;
+}
+
+/* 群聊使用更宽松的自适应行距，名称与上一条来源标签不重叠。 */
+.chat-scroll.group-chat-scroll .msg {
+  margin-top: clamp(20px, 4.8vw, 28px) !important;
+  margin-bottom: clamp(20px, 4.8vw, 28px) !important;
+  align-items: center;
+}
+.chat-scroll.group-chat-scroll .msg.other {
+  box-sizing: border-box;
+  padding-top: clamp(17px, 3.8vw, 21px);
+}
+.chat-scroll.group-chat-scroll .msg + .msg {
+  margin-top: clamp(24px, 5.4vw, 30px) !important;
+}
+.chat-scroll.group-chat-scroll .nudge-row + .msg {
+  margin-top: 42px !important;
+}
+.chat-scroll.group-chat-scroll .msg.has-msg-meta {
+  margin-bottom: clamp(58px, 11vw, 68px) !important;
+}
+.chat-scroll.group-chat-scroll .msg-sender {
+  top: 1px;
+  right: 10px;
+  max-width: calc(100% - 62px);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(9px, 1.3vw, 10.5px);
 }
 
 .sms-modal-layer {
@@ -3041,6 +3614,11 @@ onMounted(() => {
   object-fit: contain;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
 }
+.photo-preview-layer .safe-image-fallback {
+  min-width: min(320px, 82vw);
+  min-height: 180px;
+  border-radius: 12px;
+}
 
 .photo-preview-close {
   position: fixed;
@@ -3262,11 +3840,18 @@ onMounted(() => {
   max-width: 100%;
 }
 
-.decorated-card::before {
-  content: "";
+.decorated-card::before,
+.decorated-card::after {
+  content: none;
+  display: none;
   position: absolute;
   pointer-events: none;
   z-index: 5;
+  background: none !important;
+  border: 0;
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
 }
 
 .decorated-card.from-other::before {
@@ -3305,6 +3890,46 @@ onMounted(() => {
 .chat-tool-body{display:flex;flex-direction:column;gap:8px}.chat-tool-body label{display:flex;flex-direction:column;gap:4px;color:var(--theme-text);font-size:9px}.chat-tool-body textarea,.chat-tool-body input{width:100%;padding:8px;border:1px solid var(--theme-border-soft);border-radius:9px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:10px;resize:vertical}.chat-tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.search-grid{grid-template-columns:1fr 1fr}.search-grid label:first-child{grid-column:1/-1}.tool-primary{padding:8px 10px;border:0;border-radius:9px;background:var(--theme-primary);color:var(--theme-inverse);font-size:10px;font-weight:800;cursor:pointer}.tool-primary:disabled{opacity:.45}.decision-result{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:8px;border-radius:9px;background:var(--theme-soft);color:var(--theme-text);font-size:9px}.decision-result strong{color:var(--theme-primary);font-size:12px}.decision-result button{margin-left:auto;padding:4px 7px;border:1px solid var(--theme-border-soft);border-radius:7px;background:var(--theme-surface);color:var(--theme-primary);font-size:8px;cursor:pointer}.tool-history summary{color:var(--theme-muted);font-size:8.5px;cursor:pointer}.tool-history p{display:flex;justify-content:space-between;gap:8px;margin:5px 0;color:var(--theme-muted);font-size:8px}.tool-history p b{color:var(--theme-text);font-weight:600}.search-result-list{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:5px}.search-result-list button{display:grid;grid-template-columns:45px 1fr auto;align-items:center;gap:6px;padding:6px 7px;border:1px solid var(--theme-border-soft);border-radius:8px;background:var(--theme-soft);text-align:left;cursor:pointer}.search-result-list button span{color:var(--theme-primary);font-size:8px}.search-result-list button strong{overflow:hidden;color:var(--theme-text);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.search-result-list button small{color:var(--theme-muted);font-size:7px}.tool-empty{min-height:60px;display:grid;place-items:center;color:var(--theme-muted);font-size:9px}
 /* 聊天工具 */
 @media(max-width:560px){.chat-tool-workbench{margin:0 7px 8px;padding:9px}.chat-tool-grid{grid-template-columns:1fr}.search-grid{grid-template-columns:1fr}.search-grid label:first-child{grid-column:auto}.search-result-list button{grid-template-columns:38px 1fr}.search-result-list button small{display:none}}
+
+.chat-scroll:not(.group-chat-scroll) .msg{margin:6px 0!important}
+.chat-scroll:not(.group-chat-scroll) .msg + .msg{margin-top:4px!important}
+.chat-scroll:not(.group-chat-scroll) .msg.media-message{margin-top:10px!important;margin-bottom:8px!important}
+.chat-scroll:not(.group-chat-scroll) .msg.transfer-message{margin-top:10px!important;margin-bottom:10px!important}
+.chat-scroll:not(.group-chat-scroll) .msg.has-msg-meta{margin-bottom:42px!important}
+.chat-scroll .echoes-timestamp{margin:12px 0 5px!important}
+.group-avatar-editor{display:flex;align-items:center;gap:10px;margin:8px 0}.group-avatar-preview{width:54px;height:54px;flex:none;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:var(--theme-soft);color:var(--theme-primary);font-size:18px}.group-avatar-preview img{width:100%;height:100%;object-fit:cover}.nudge-group-target{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0;color:var(--theme-text);font-size:10px}.nudge-group-target select{padding:7px 9px;border:1px solid var(--theme-border-soft);border-radius:8px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:10px}.decision-group-members{display:flex;flex-wrap:wrap;gap:6px}.decision-group-members>span{width:100%;color:var(--theme-muted);font-size:8.5px}.decision-group-members label{display:flex;align-items:center;gap:4px;padding:5px 7px;border-radius:7px;background:var(--theme-soft);font-size:9px}.decision-group-members input{accent-color:var(--theme-primary)}
+.group-call-banner{width:calc(100% - 24px);margin:0 12px 8px;padding:8px 10px;display:flex;align-items:center;gap:9px;border:1px solid var(--theme-border-soft);border-radius:12px;background:var(--theme-soft);color:var(--theme-text);text-align:left;cursor:pointer}
+.group-call-banner-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.group-call-banner-copy strong{font-size:11px}.group-call-banner-copy small{overflow:hidden;color:var(--theme-muted);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.group-call-banner>b{flex:none;color:var(--theme-primary);font-size:9px}
+.group-call-live{width:8px;height:8px;flex:none;border-radius:50%;background:var(--theme-positive,#43b581);box-shadow:0 0 0 3px color-mix(in srgb,var(--theme-positive,#43b581) 18%,transparent);animation:group-call-pulse 1.5s ease-in-out infinite}
+@keyframes group-call-pulse{50%{opacity:.45;transform:scale(.8)}}
+.group-call-hint{margin:-2px 0 9px;color:var(--theme-muted);font-size:9px;line-height:1.5}.group-call-member-select{max-height:min(42vh,300px);overflow:auto}
+.group-call-manager{width:min(360px,calc(100vw - 30px));max-height:min(76vh,560px);overflow:auto}.group-call-manager-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px}.group-call-manager-head h3{margin:0}.group-call-manager-head p{margin:3px 0 0;color:var(--theme-muted);font-size:9px}.group-call-manager-head>strong{padding:4px 7px;border-radius:999px;background:var(--theme-soft);color:var(--theme-primary);font-size:9px}
+.group-call-member-list{display:flex;flex-direction:column;gap:6px;margin:8px 0 13px}.group-call-member-row{display:flex;align-items:center;gap:8px;padding:6px;border-radius:10px;background:var(--theme-soft);font-size:10px}.group-call-member-row>span:nth-child(2){flex:1;min-width:0}.group-call-member-row>b{color:var(--theme-muted);font-size:8.5px}.group-call-member-row>b.online{color:var(--theme-positive,#43b581)}.group-call-member-avatar{width:30px;height:30px;flex:none;border-radius:50%;overflow:hidden;display:grid;place-items:center;color:#fff;font-size:10px}.group-call-member-avatar img{width:100%;height:100%;object-fit:cover}
+.group-call-manager-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.group-call-manager-actions button{min-height:38px;border:0;border-radius:10px;font:inherit;font-size:10px;font-weight:800;cursor:pointer}.group-call-manager-actions .join{background:var(--theme-primary);color:var(--theme-inverse)}.group-call-manager-actions .leave{background:var(--theme-soft);color:var(--theme-text)}.group-call-manager-actions .end{grid-column:1/-1;background:var(--theme-danger-surface,var(--theme-soft));color:var(--theme-accent-warm)}
+@media(max-width:560px){.group-call-banner{width:calc(100% - 18px);margin:0 9px 7px}.group-call-manager{width:calc(100vw - 24px)}}
+
+/* 每条消息作为一个完整条目排版：时间、气泡/图片、标签共同决定内容高度，条目之间保持统一空隙。 */
+.chat-scroll{--chat-message-gap:15px;display:flex!important;flex-direction:column!important;gap:var(--chat-message-gap)!important;padding-bottom:32px!important;}
+.chat-message-item{flex:none;width:100%;display:flex;flex-direction:column;gap:var(--chat-message-gap)!important;margin:0!important;padding:0!important;overflow:visible;}
+.chat-message-item .echoes-timestamp{margin:0!important;line-height:1.35;}
+.chat-message-item .msg,.chat-message-item .msg.media-message,.chat-message-item .msg.transfer-message,.chat-message-item .msg.gift-message,.chat-message-item .msg.has-msg-meta{margin:0!important;padding:0!important;align-items:center!important;flex-wrap:wrap!important;row-gap:0!important;overflow:visible!important;}
+.chat-scroll:not(.group-chat-scroll) .chat-message-item .msg,.chat-scroll:not(.group-chat-scroll) .chat-message-item .msg.media-message,.chat-scroll:not(.group-chat-scroll) .chat-message-item .msg.transfer-message,.chat-scroll:not(.group-chat-scroll) .chat-message-item .msg.gift-message,.chat-scroll:not(.group-chat-scroll) .chat-message-item .msg.has-msg-meta,.chat-scroll.group-chat-scroll .chat-message-item .msg,.chat-scroll.group-chat-scroll .chat-message-item .msg.media-message,.chat-scroll.group-chat-scroll .chat-message-item .msg.transfer-message,.chat-scroll.group-chat-scroll .chat-message-item .msg.gift-message,.chat-scroll.group-chat-scroll .chat-message-item .msg.has-msg-meta{margin:0!important;}
+.chat-message-item .msg + .msg{margin-top:0!important;}
+.chat-message-item .echoes-bubble-user,.chat-message-item .echoes-bubble-other{transform:none!important;}
+.chat-message-item .msg-meta{position:static!important;left:auto!important;right:auto!important;bottom:auto!important;order:99;flex:0 0 calc(100% - 52px)!important;width:calc(100% - 52px)!important;margin:var(--chat-message-gap) 8px 0 52px!important;padding:0;}
+.chat-message-item .msg .bubble{min-height:42px;box-sizing:border-box;}
+.chat-message-item .msg-sender{top:0;right:auto;left:52px;}
+.chat-message-item .msg.other:has(.msg-sender){padding-top:14px!important;}
+.chat-message-item .nudge-row,.chat-message-item .call-row,.chat-message-item .read-receipt-row{margin:0!important;}
+.nudge-pager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;}
+.nudge-pager button{padding:6px 10px;border:1px solid var(--theme-border);border-radius:9px;background:var(--theme-surface);color:var(--theme-text);font-size:9px;font-weight:700;cursor:pointer;}
+.nudge-pager span{color:var(--theme-muted);font-size:9px;}
+.group-member-manager{margin:10px 0 12px;padding:10px;border-radius:12px;background:var(--theme-soft)}
+.group-member-manager-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;color:var(--theme-text)}.group-member-manager-head strong{font-size:10.5px}.group-member-manager-head span{color:var(--theme-muted);font-size:9px}
+.group-member-choices{max-height:180px;overflow:auto}.group-member-choices label{position:relative}.group-member-choices small{margin-left:auto;color:var(--theme-muted);font-size:7.5px}
+.group-member-hint{margin:7px 0 0;color:var(--theme-muted);font-size:8.5px;line-height:1.55}
+.group-settings-danger{margin-top:12px;padding-top:10px;border-top:1px solid var(--theme-border-soft)}.group-settings-danger button{width:100%;padding:9px;border:0;border-radius:10px;background:var(--theme-danger-surface,var(--theme-soft));color:var(--theme-accent-warm);font:inherit;font-size:9.5px;font-weight:800;cursor:pointer}
+@media(max-width:560px){.group-member-choices{max-height:150px}}
 </style>
 
 

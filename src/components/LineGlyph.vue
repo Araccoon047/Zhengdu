@@ -44,6 +44,7 @@ const iconMarkup = {
   bubbleSpark: `<path d="M20 14a3 3 0 0 1-3 3h-5l-5 4v-4H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/><path d="m12 7-1.2 3H14l-2 4"/>`,
   send: `<path d="m3 11 18-8-8 18-2.5-7.5z"/><path d="M10.5 13.5 21 3"/>`,
   monitorQuestion: `<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M9.8 9a2.3 2.3 0 1 1 4.2 1.2c-.6.8-1.5 1-2 1.8"/><path d="M12 14h.01"/>`,
+  wishlist: `<path d="m12 3 2.1 5.2L20 10l-5.9 1.8L12 17l-2.1-5.2L4 10l5.9-1.8z"/><path d="M5 18h3M16 18h3M7 21h10"/>`,
   back: `<path d="m15 18-6-6 6-6"/>`,}
 
 const fallbackMarkup = '<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/>'

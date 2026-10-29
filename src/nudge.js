@@ -1,4 +1,6 @@
 import { settings } from './settings'
+import systemCardsData from './data/system-cards.json'
+import { systemCardGroupRows } from './system-card-pool'
 
 export const DEFAULT_NUDGE_SYMBOLS = ['✦', '✧', '♡', '❋', '❤']
 
@@ -21,9 +23,14 @@ export function allNudgeSymbols() {
 }
 
 export function allNudgeTexts() {
+  const touchCategory = (systemCardsData.categories || []).find((category) => category.key === 'touch')
+  const defaultNudgeIndex = touchCategory?.groups?.findIndex((group) => group.name === '默认拍一拍') ?? -1
+  const systemTexts = defaultNudgeIndex >= 0
+    ? systemCardGroupRows(touchCategory, defaultNudgeIndex).map((row) => row.text)
+    : []
   return [
     ...new Set([
-      ...DEFAULT_NUDGE_TEXTS,
+      ...systemTexts,
       ...(Array.isArray(settings.customNudgeTexts) ? settings.customNudgeTexts : []),
     ]),
   ].filter(Boolean)
@@ -46,6 +53,7 @@ export function incomingNudgeText(contactName, text, symbol) {
 export function randomIncomingNudge(contactName) {
   const texts = allNudgeTexts()
   const symbols = allNudgeSymbols()
+  if (!texts.length) return `${String(contactName || 'TA').trim() || 'TA'}拍了拍你`
   return incomingNudgeText(
     contactName,
     texts[Math.floor(Math.random() * texts.length)],

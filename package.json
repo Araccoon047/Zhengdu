@@ -1,7 +1,7 @@
 {
   "name": "zhengdu",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.0.4",
   "type": "module",
   "description": "争渡 · 小手机风格的网页版（后续套壳为安卓 APP）",
   "scripts": {

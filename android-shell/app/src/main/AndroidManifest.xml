@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.zhengdu.app" android:versionCode="3" android:versionName="Zhengdu1.0">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.zhengdu.app" android:versionCode="9" android:versionName="Zhengdu2.0.4">
 
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="35" />
 

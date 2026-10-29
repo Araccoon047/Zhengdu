@@ -68,7 +68,9 @@ const filteredLibrary = computed(() => {
 const favoriteTracks = computed(() => idsToTracks(musicState.favorites))
 const taFavoriteTracks = computed(() => idsToTracks(musicState.taFavorites))
 const queueTracks = computed(() => idsToTracks(musicState.queue))
-const modeLabel = computed(() => MUSIC_MODES.find((mode) => mode.id === musicState.mode)?.label || '列表播放')
+const currentMode = computed(() => MUSIC_MODES.find((mode) => mode.id === musicState.mode) || MUSIC_MODES[3])
+const modeLabel = computed(() => currentMode.value.label)
+const modeIcon = computed(() => currentMode.value.icon)
 const progressPercent = computed(() =>
   musicState.duration > 0 ? Math.min(100, (musicState.currentTime / musicState.duration) * 100) : 0
 )
@@ -174,7 +176,7 @@ async function startCleanUnplayable() {
   cleanResult.value = null
   cleanRows.value = []
   cleanProgress.value = { done: 0, total: 0 }
-  notice.value = '正在探测网易云歌曲的可播放性与时长…'
+  notice.value = '正在探测网易云歌曲的试听片段…'
   try {
     const result = await scanUnplayableNetease((progress) => {
       cleanProgress.value = progress
@@ -189,14 +191,11 @@ async function startCleanUnplayable() {
     }
     if (!result.removable.length) {
       const extra = result.unknown ? `，${result.unknown} 首探测超时未计入` : ''
-      notice.value = `已检测 ${result.probed} 首，未发现会员/付费歌曲${extra}`
+      notice.value = `已检测 ${result.probed} 首，未发现仅能试听的会员歌曲${extra}`
       return
     }
     cleanResult.value = result
-    cleanRows.value = [
-      ...result.unplayable.map((track) => ({ track, reason: 'blocked' })),
-      ...result.preview.map((track) => ({ track, reason: 'preview' })),
-    ]
+    cleanRows.value = result.preview.map((track) => ({ track, reason: 'preview' }))
     cleanOpen.value = true
     notice.value = ''
   } catch {
@@ -213,7 +212,7 @@ async function confirmCleanUnplayable() {
   cleanOpen.value = false
   cleanResult.value = null
   cleanRows.value = []
-  notice.value = `已移除 ${ids.length} 首会员/付费歌曲`
+  notice.value = `已移除 ${ids.length} 首仅能试听的会员歌曲`
 }
 
 function cancelCleanUnplayable() {
@@ -365,7 +364,7 @@ function playFromHistory(item) {
       <button type="button" class="player-main" @click="queueOpen = true"><span class="player-art"><img v-if="currentTrack.cover" :src="currentTrack.cover" alt="" /><template v-else>{{ musicState.playing ? '❚❚' : '▶' }}</template></span><span class="track-copy"><strong>{{ currentTrack.name }}</strong><small>{{ currentTrack.artist }}</small></span></button>
       <div class="player-progress"><span>{{ formatMusicTime(musicState.currentTime) }}</span><input type="range" min="0" :max="musicState.duration || 1" step="0.01" :value="musicState.currentTime" :style="{ '--p': progressPercent + '%' }" @input="seekFromEvent" /><span>{{ formatMusicTime(musicState.duration) }}</span></div>
       <div class="player-controls">
-        <button type="button" @click="toggleMode" :title="modeLabel">↻</button>
+        <button type="button" @click="toggleMode" :title="modeLabel">{{ modeIcon }}</button>
         <button type="button" @click="playPrev">‹</button>
         <button type="button" class="play-button" @click="togglePlay">{{ musicState.playing ? '❚❚' : '▶' }}</button>
         <button type="button" @click="playNext">›</button>
@@ -388,11 +387,8 @@ function playFromHistory(item) {
             <button type="button" aria-label="关闭" @click="cancelCleanUnplayable">×</button>
           </header>
           <p class="clean-hint">
-            共 {{ cleanResult.removable.length }} 首会被移除：
-            <template v-if="cleanResult.unplayable.length">{{ cleanResult.unplayable.length }} 首无法播放（会员 / 付费 / 链接失效）</template>
-            <template v-if="cleanResult.unplayable.length && cleanResult.preview.length">，</template>
-            <template v-if="cleanResult.preview.length">{{ cleanResult.preview.length }} 首只有 30 秒试听（会员歌曲）</template>。
-            移除只影响这些网易云歌曲，本地音乐与其他直链不受影响。
+            共 {{ cleanResult.removable.length }} 首仅有 30 秒试听片段，会被移除。
+            完全无法播放的歌曲与探测超时歌曲不会自动删除。
           </p>
           <div class="clean-list">
             <article v-for="row in cleanRows.slice(0, 30)" :key="row.track.id">
@@ -433,7 +429,7 @@ function playFromHistory(item) {
 
     <transition name="music-pop">
       <div v-if="queueOpen" class="music-modal-layer" @click.self="queueOpen = false">
-        <div class="music-modal queue-modal"><header><strong>播放队列</strong><button type="button" @click="queueOpen = false">×</button></header><p class="queue-mode">当前模式：{{ modeLabel }}</p><button v-for="track in queueTracks" :key="track.id" type="button" class="queue-row" @click="playTrack(track.id)"><span>▶</span><span>{{ track.name }}</span><small>{{ track.artist }}</small></button><div v-if="!queueTracks.length" class="music-empty">队列里还没有歌曲。</div><div class="modal-actions"><button type="button" @click="clearMusicQueue">清空队列</button><button type="button" class="primary" @click="queueOpen = false">关闭</button></div></div>
+        <div class="music-modal queue-modal"><header><strong>播放队列</strong><button type="button" @click="queueOpen = false">×</button></header><p class="queue-mode">当前模式：{{ modeIcon }} {{ modeLabel }}</p><button v-for="track in queueTracks" :key="track.id" type="button" class="queue-row" @click="playTrack(track.id)"><span>▶</span><span>{{ track.name }}</span><small>{{ track.artist }}</small></button><div v-if="!queueTracks.length" class="music-empty">队列里还没有歌曲。</div><div class="modal-actions"><button type="button" @click="clearMusicQueue">清空队列</button><button type="button" class="primary" @click="queueOpen = false">关闭</button></div></div>
       </div>
     </transition>
 
@@ -443,9 +439,14 @@ function playFromHistory(item) {
           <header><strong>音乐设置</strong><button type="button" @click="settingsOpen = false">×</button></header>
           <div class="setting-tabs">
             <label class="setting-line"><span>悬浮播放小框</span><input v-model="musicSettings.floatEnabled" type="checkbox" /></label>
+            <label class="setting-line"><span>悬浮播放组件不透明度</span><span class="opacity-setting-control"><input v-model.number="musicSettings.floatOpacity" type="range" min="20" max="100" step="1" /><b>{{ musicSettings.floatOpacity }}%</b></span></label>
+            <label v-for="(_, index) in musicSettings.floatNudgeTexts" :key="'float-nudge-' + index" class="setting-line"><span>拍一拍文案 {{ index + 1 }}</span><input v-model="musicSettings.floatNudgeTexts[index]" class="setting-text-input" type="text" maxlength="50" /></label>
             <ProbabilityField v-model="musicSettings.requestChance" v-model:random-value="musicSettings.requestChanceRandom" label="音乐请求触发概率（%）" :max="30" />
             <label class="setting-line"><span>请求冷却</span><select v-model.number="musicSettings.cooldownMinutes"><option :value="0">无冷却</option><option :value="5">5分钟</option><option :value="10">10分钟</option></select></label>
+            <label class="setting-line"><span>桌面组件样式</span><select v-model="musicSettings.widgetLayout"><option value="wide">宽卡长方形 · 4×2</option><option value="square">正方形卡片 · 2×2</option></select></label>
             <label class="setting-line"><span>桌面组件封面</span><select v-model="musicSettings.widgetCoverMode"><option value="song">歌曲封面</option><option value="playlist">歌单封面</option></select></label>
+            <label class="setting-line"><span>我的播放模式</span><select :value="musicState.mode" @change="setMusicMode($event.target.value)"><option v-for="mode in MUSIC_MODES" :key="mode.id" :value="mode.id">{{ mode.icon }} {{ mode.label }}</option></select></label>
+            <label class="setting-line"><span>联系人播放模式</span><select v-model="musicSettings.taMode"><option v-for="mode in MUSIC_MODES" :key="mode.id" :value="mode.id">{{ mode.icon }} {{ mode.label }}</option><option value="random">✧ 完全随机</option></select></label>
             <ProbabilityField v-model="musicSettings.taReserveChance" v-model:random-value="musicSettings.taReserveChanceRandom" label="TA 预存下一首概率（%）" />
             <ProbabilityField v-model="musicSettings.taNextChance" v-model:random-value="musicSettings.taNextChanceRandom" label="TA 主动切下一首概率（%）" />
             <ProbabilityField v-model="musicSettings.taRandomChance" v-model:random-value="musicSettings.taRandomChanceRandom" label="TA 随机挑歌概率（%）" />
@@ -533,13 +534,22 @@ function playFromHistory(item) {
 .import-modal .primary:disabled{opacity:.45;cursor:wait}
 .player-controls .play-button{width:38px;height:38px;border-radius:50%;background:var(--theme-primary);color:var(--theme-inverse);font-size:12px;box-shadow:0 5px 14px rgba(var(--theme-primary-rgb),.24)}
 .ta-action{color:var(--theme-muted);font-size:8.5px;text-align:center}
-.music-modal-layer{position:fixed;inset:0;z-index:260;display:grid;place-items:center;padding:14px;background:rgba(var(--theme-overlay-rgb),.34);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
-.music-modal{width:min(430px,100%);max-height:min(82dvh,680px);overflow:auto;padding:13px;border:1px solid var(--theme-border);border-radius:17px;background:var(--theme-surface);display:flex;flex-direction:column;gap:10px}
+.music-modal-layer{position:fixed;inset:0;z-index:260;display:grid;place-items:center;box-sizing:border-box;width:100%;height:100dvh;max-width:100vw;max-height:100dvh;overflow:hidden;padding:max(10px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:rgba(var(--theme-overlay-rgb),.34);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
+.music-modal{box-sizing:border-box;width:min(430px,100%);max-width:100%;min-width:0;max-height:100%;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:13px;border:1px solid var(--theme-border);border-radius:17px;background:var(--theme-surface);display:flex;flex-direction:column;gap:10px}
+.music-modal>*{min-width:0}
+.settings-modal{overflow:hidden}
+.settings-modal>header,.settings-modal>.modal-actions{flex:none}
+.settings-modal .setting-tabs{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-right:2px}
 .music-modal header{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .music-modal header strong{color:var(--theme-primary);font-size:13px}
 .music-modal header button{border:0;background:transparent;font-size:17px}
-.setting-line{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--theme-border-soft);color:var(--theme-text);font-size:10px}
-.setting-line input[type="number"],.setting-line select{width:82px;padding:6px 7px;border:1px solid var(--theme-border-soft);border-radius:8px;background:var(--theme-soft);color:var(--theme-text)}
+.setting-line{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:6px 0;border-bottom:1px solid var(--theme-border-soft);color:var(--theme-text);font-size:10px}
+.setting-line>span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.setting-line input[type="number"],.setting-line select{box-sizing:border-box;width:82px;max-width:100%;min-width:0;padding:6px 7px;border:1px solid var(--theme-border-soft);border-radius:8px;background:var(--theme-soft);color:var(--theme-text)}
+.setting-line .opacity-setting-control{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 1 170px;min-width:0}
+.setting-line .opacity-setting-control input[type="range"]{width:100%;min-width:0;accent-color:var(--theme-primary)}
+.setting-line .opacity-setting-control b{flex:none;width:34px;color:var(--theme-text);font-size:9px;text-align:right}
+.setting-line .setting-text-input{box-sizing:border-box;width:min(190px,55%);max-width:100%;min-width:0;padding:6px 7px;border:1px solid var(--theme-border-soft);border-radius:8px;background:var(--theme-soft);color:var(--theme-text)}
 .setting-line input[type="checkbox"]{accent-color:var(--theme-primary)}
 .import-modal textarea{width:100%;min-height:120px;padding:9px 10px;border:1px solid var(--theme-border-soft);border-radius:10px;background:var(--theme-soft);color:var(--theme-text);font:inherit;font-size:10.5px;resize:vertical}
 .modal-actions{display:flex;justify-content:flex-end;gap:7px}
@@ -561,5 +571,15 @@ function playFromHistory(item) {
 .clean-tag.blocked{color:#c26a5e;border-color:rgba(194,106,94,.42)}
 .clean-tag.preview{color:var(--theme-primary);border-color:var(--theme-primary);opacity:.85}
 .music-pop-enter-active,.music-pop-leave-active{transition:opacity .18s ease,transform .18s ease}.music-pop-enter-from,.music-pop-leave-to{opacity:0;transform:translateY(7px) scale(.98)}
-@media(max-width:560px){.music-app{padding:0 8px 92px}.music-tabs button{padding:7px 9px;font-size:9.5px}.music-tools button{flex:1;min-width:76px}.player-bar{border-radius:14px}.track-actions button{width:23px}.track-copy strong{font-size:10.5px}.history-row time{display:none}}
+@media(max-width:560px){
+.music-app{padding:0 8px 92px}.music-tabs button{padding:7px 9px;font-size:9.5px}.music-tools button{flex:1;min-width:76px}.player-bar{border-radius:14px}.track-actions button{width:23px}.track-copy strong{font-size:10.5px}.history-row time{display:none}
+.music-modal-layer{padding:max(8px,env(safe-area-inset-top)) max(7px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(7px,env(safe-area-inset-left))}
+.music-modal{width:100%;max-width:100%;max-height:100%;padding:11px;border-radius:14px}
+.setting-line{align-items:flex-start;flex-direction:column;gap:5px}
+.setting-line>span{width:100%}
+.setting-line select,.setting-line input[type="number"],.setting-line .setting-text-input{width:100%;max-width:100%;min-width:0}
+.setting-line .opacity-setting-control{flex:1 1 auto;width:100%;max-width:none}
+.modal-actions{flex-wrap:wrap}
+.modal-actions button{flex:1 1 auto;min-height:36px}
+}
 </style>

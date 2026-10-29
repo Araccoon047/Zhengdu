@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $androidRoot = Join-Path $repoRoot '.android-build'
@@ -50,7 +50,7 @@ $withDex = Join-Path $work 'with-dex.apk'
 $alignedApk = Join-Path $work 'aligned.apk'
 $signedApk = Join-Path $work 'zhengdu-signed.apk'
 $keystore = Join-Path $androidRoot 'zhengdu-debug.keystore'
-$outputApk = Join-Path (Split-Path -Parent $repoRoot) '争渡+Zhengdu1.0.apk'
+$outputApk = Join-Path (Split-Path -Parent $repoRoot) (('{0}{1}' -f [char]0x4E89,[char]0x6E21) + '2.0.4.apk')
 New-Item -ItemType Directory -Path $work,$genDir,$classesDir,$dexDir -Force | Out-Null
 
 Write-Host 'Compiling Android resources...'

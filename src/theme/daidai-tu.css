@@ -1,0 +1,216 @@
+/* eve全局 · 呆呆兔 by X000 */
+html[data-site-theme="daidaiTu"] {
+  color-scheme: light;
+  --theme-primary: #888888;
+  --theme-primary-rgb: 136, 136, 136;
+  --theme-primary-light: #a8a8a8;
+  --theme-accent: #777777;
+  --theme-accent-rgb: 119, 119, 119;
+  --theme-muted: #9b9b9b;
+  --theme-muted-rgb: 155, 155, 155;
+  --app-icon-color: #777777;
+  --dock-color: #888888;
+  --dock-active-color: #555555;
+  --theme-text: #4a4a4a;
+  --theme-text-strong: #343434;
+  --theme-text-rgb: 74, 74, 74;
+  --theme-border: #dedede;
+  --theme-border-rgb: 222, 222, 222;
+  --theme-pale: #efefef;
+  --theme-pale-rgb: 239, 239, 239;
+  --theme-soft: rgba(255, 255, 255, 0.72);
+  --theme-soft-rgb: 255, 255, 255;
+  --theme-surface: #f7f7f7;
+  --theme-surface-rgb: 247, 247, 247;
+  --theme-border-soft: #e7e7e7;
+  --theme-bg: #f2f3f4;
+  --theme-bg-deep: #e7e9eb;
+  --theme-bg-tint: #fafafa;
+  --theme-accent-warm: #d8a3a8;
+  --theme-accent-warm-rgb: 216, 163, 168;
+  --theme-danger-border: #e4d7d8;
+  --theme-danger-surface: #fcf7f7;
+  --theme-positive: #9cb8aa;
+  --theme-overlay-rgb: 52, 52, 52;
+  --theme-shadow-rgb: 80, 80, 80;
+  --theme-avatar: #a5a5a5;
+  --theme-inverse: #ffffff;
+  --button-radius: 999px;
+  --button-shadow: none;
+}
+
+html[data-site-theme="daidaiTu"] .echoes-app-shell {
+  background: #f7f7f7 !important;
+}
+html[data-site-theme="daidaiTu"] .site-main,
+html[data-site-theme="daidaiTu"] .chat-panel {
+  background: transparent !important;
+}
+html[data-site-theme="daidaiTu"] .app-topbar {
+  background: rgba(247, 247, 247, 0.92) !important;
+  border-bottom: 1px solid rgba(222, 222, 222, 0.8) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+html[data-site-theme="daidaiTu"] .echoes-character-card,
+html[data-site-theme="daidaiTu"] .settings-menu > button,
+html[data-site-theme="daidaiTu"] .skin-choice,
+html[data-site-theme="daidaiTu"] .frame-target-switch button,
+html[data-site-theme="daidaiTu"] .theme-frame-preview {
+  border-color: rgba(205, 205, 205, 0.62) !important;
+  background: rgba(255, 255, 255, 0.68) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-site-theme="daidaiTu"] .dock-tilt {
+  background: rgba(255, 255, 255, 0.86) !important;
+  box-shadow: 0 5px 16px rgba(100, 100, 100, 0.12) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html[data-site-theme="daidaiTu"] .echoes-chat-header.chat-head {
+  position: relative !important;
+  isolation: isolate;
+  overflow: hidden !important;
+  min-height: 110px !important;
+  padding: calc(18px + env(safe-area-inset-top)) 14px 20px !important;
+  border: 0 !important;
+  border-radius: 0 0 24px 24px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="daidaiTu"] .echoes-chat-header.chat-head::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  border-radius: inherit !important;
+  background: url("../assets/themes/daidai-tu/header-banner.png") center / 100% 100% no-repeat !important;
+  pointer-events: none !important;
+}
+html[data-site-theme="daidaiTu"] .echoes-chat-header.chat-head > * {
+  position: relative;
+  z-index: 1;
+}
+html[data-site-theme="daidaiTu"] .chat-head-main h2 {
+  color: #777777 !important;
+  font-size: 14px !important;
+  letter-spacing: 0.04em;
+}
+html[data-site-theme="daidaiTu"] .chat-head-main span {
+  color: #9b9b9b !important;
+}
+html[data-site-theme="daidaiTu"] .chat-back {
+  border: 0 !important;
+  background: url("../assets/themes/daidai-tu/back.png") center / contain no-repeat !important;
+  box-shadow: none !important;
+  color: transparent !important;
+}
+html[data-site-theme="daidaiTu"] .chat-back svg {
+  display: none !important;
+}
+html[data-site-theme="daidaiTu"] .chat-head-options {
+  border: 0 !important;
+  background: url("../assets/themes/daidai-tu/action-1.png") center / contain no-repeat !important;
+  color: transparent !important;
+  box-shadow: none !important;
+  font-size: 0 !important;
+}
+html[data-site-theme="daidaiTu"] .sticker-btn {
+  border: 0 !important;
+  background: url("../assets/themes/daidai-tu/action-2.png") center / contain no-repeat !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="daidaiTu"] .sticker-btn > span {
+  opacity: 0 !important;
+}
+html[data-site-theme="daidaiTu"] .plus-btn {
+  border: 0 !important;
+  background: url("../assets/themes/daidai-tu/tools.png") center / contain no-repeat !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="daidaiTu"] .plus-btn svg {
+  opacity: 0 !important;
+}
+html[data-site-theme="daidaiTu"] .chat-more-btn {
+  border: 0 !important;
+  background: url("../assets/themes/daidai-tu/reply.png") center / contain no-repeat !important;
+  box-shadow: none !important;
+}
+html[data-site-theme="daidaiTu"] .proactive-dots {
+  opacity: 0 !important;
+}
+html[data-site-theme="daidaiTu"] .chat-send-btn {
+  border: 0 !important;
+  background: url("../assets/themes/daidai-tu/send.png") center / contain no-repeat !important;
+  color: transparent !important;
+  box-shadow: none !important;
+  font-size: 0 !important;
+}
+html[data-site-theme="daidaiTu"] .echoes-input-area.chat-input-area {
+  position: relative !important;
+  min-height: 82px;
+  padding: 14px 12px calc(14px + env(safe-area-inset-bottom)) !important;
+  border: 0 !important;
+  background-color: transparent !important;
+  background-image: url("../assets/themes/daidai-tu/input-banner.png") !important;
+  background-position: center bottom !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+}
+html[data-site-theme="daidaiTu"] .chat-field {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.64) !important;
+  color: #343434 !important;
+  box-shadow: inset 0 0 5px rgba(225, 225, 225, 0.72) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-site-theme="daidaiTu"] .chat-field::placeholder {
+  color: #bcbcbc !important;
+}
+
+html[data-site-theme="daidaiTu"][data-bubble-skin="default"] .echoes-bubble-user,
+html[data-site-theme="daidaiTu"][data-bubble-skin="default"] .echoes-bubble-other {
+  opacity: 1 !important;
+  position: relative !important;
+  overflow: visible !important;
+  transform: translateY(21px) !important;
+  border: 1px solid rgba(197, 197, 197, 0.42) !important;
+  border-radius: 30px !important;
+  padding: 8px 15px !important;
+  background: rgba(255, 255, 255, 0.56) !important;
+  color: #343434 !important;
+  box-shadow: inset 0 0 5px 1px rgba(235, 235, 235, 0.68) !important;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+html[data-site-theme="daidaiTu"] .transfer-decoration-theme-daidaiTu {
+  border: 1px solid rgba(197, 197, 197, 0.42) !important;
+  border-radius: 24px !important;
+  background: rgba(255, 255, 255, 0.66) !important;
+  color: #666666 !important;
+  box-shadow: inset 0 0 5px rgba(235, 235, 235, 0.68) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.transfer-skin-theme-daidaiTu::before,
+.transfer-skin-theme-daidaiTu::after {
+  content: none !important;
+  display: none !important;
+}
+.transfer-skin-theme-daidaiTu {
+  border: 1px solid rgba(197, 197, 197, 0.42) !important;
+  border-radius: 24px !important;
+  background: rgba(255, 255, 255, 0.66) !important;
+  color: #666666 !important;
+  box-shadow: inset 0 0 5px rgba(235, 235, 235, 0.68) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+

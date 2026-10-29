@@ -54,7 +54,7 @@ public class NativeBridge {
 
     @JavascriptInterface
     public String getAppVersion() {
-        return "Zhengdu1.0";
+        return "Zhengdu2.0.2";
     }
 
     @JavascriptInterface
@@ -95,9 +95,9 @@ public class NativeBridge {
                 connection = (HttpURLConnection) new URL(url).openConnection();
                 connection.setConnectTimeout(30000);
                 connection.setReadTimeout(45000);
-                connection.setRequestMethod("POST");
+                boolean hasBody = body != null && !body.isEmpty() && !"null".equals(body);
+                connection.setRequestMethod(hasBody ? "POST" : "GET");
                 connection.setDoInput(true);
-                connection.setDoOutput(true);
                 connection.setRequestProperty("Accept", "application/json");
                 JSONObject headers = new JSONObject(headersJson == null ? "{}" : headersJson);
                 java.util.Iterator<String> keys = headers.keys();
@@ -105,9 +105,12 @@ public class NativeBridge {
                     String key = keys.next();
                     connection.setRequestProperty(key, headers.optString(key));
                 }
-                try (OutputStream output = connection.getOutputStream()) {
-                    output.write(String.valueOf(body).getBytes(StandardCharsets.UTF_8));
-                    output.flush();
+                if (hasBody) {
+                    connection.setDoOutput(true);
+                    try (OutputStream output = connection.getOutputStream()) {
+                        output.write(String.valueOf(body).getBytes(StandardCharsets.UTF_8));
+                        output.flush();
+                    }
                 }
                 status = connection.getResponseCode();
                 InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
